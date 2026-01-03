@@ -1,30 +1,48 @@
 import socket
 import ssl
-
+import os
 
 class URL:
   def __init__(self, url):
     #cutting url into host, scheme and path
     self.scheme, url = url.split("://",1)
-    assert self.scheme in ["http", "https"]
     
-    if "/" not in url :
-      url = url + "/"
-    
-    self.host, url = url.split("/",1)
-    self.path = "/" + url
-    
-    #saving port for http or https because both have diff ports 
-    if self.scheme == "http":
-      self.port = 80
-    elif self.scheme == "https":
-      self.port = 443
+    if self.scheme in ["http", "https"]:  
+      if "/" not in url :
+        url = url + "/"
       
-    if ":" in self.host:
-      self.host, port = self.host.split(":", 1)
-      self.port = int(port)
+      self.host, url = url.split("/",1)
+      self.path = "/" + url
+      
+      #saving port for http or https because both have diff ports 
+      if self.scheme == "http":
+        self.port = 80
+      elif self.scheme == "https":
+        self.port = 443
+        
+      if ":" in self.host:
+        self.host, port = self.host.split(":", 1)
+        self.port = int(port)
     
+    
+    elif self.scheme in ["file"]:
+      # file:///C:/path/to/file.html
+      if os.name == "nt" and url.startswith("/"):
+        url = url[1:]   # remove leading '/'
+      self.path = os.path.normpath(url)
+
+
+    
+      
   def requests(self):
+    
+    if self.scheme == "file":
+      try:
+        with open(self.path, "r", encoding="utf8") as f:
+          return f.read()
+      except FileNotFoundError:
+        return "<h1>404 File Not Found</h1>"
+      
     #using socket to estabilish the connection
     s = socket.socket(
       family= socket.AF_INET,
