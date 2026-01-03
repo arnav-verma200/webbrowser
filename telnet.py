@@ -56,7 +56,29 @@ class URL:
     content = response.read()
     s.close()
     return content
-    
-url1 = URL("http://example.org/index.html")
-ts = url1.requests()
-print(ts)
+
+  def show(self, body):
+    in_tag = False
+    for c in body:
+        if c == "<":
+            in_tag = True
+        elif c == ">":
+            in_tag = False
+        elif not in_tag:
+            print(c, end="")
+
+
+
+def load(url):
+  body = url.requests()
+  url.show(body)
+
+if __name__ == "__main__":
+  print("Normal HTML request: ")
+  ts = URL("http://example.org/index.html").requests()
+  print(ts)
+  print("______________________________________")
+  
+  
+  print("Proper Displaying the HTML")
+  load(URL("http://example.org/index.html"))
