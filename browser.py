@@ -4,6 +4,12 @@ import os
 
 class URL:
   def __init__(self, url):
+    
+    self.view_source = False
+    if url.startswith("view-source:"):
+      self.view_source = True
+      url = url[len("view-source:"):]
+    
     #cutting url into host, scheme and path
     self.scheme, url = url.split("://",1)
     
@@ -95,22 +101,44 @@ class URL:
     return content
 
 # getting the html from the page 
-  def show(self, body):
-    in_tag = False
-    for c in body:
-        if c == "<":
-            in_tag = True
-        elif c == ">":
-            in_tag = False
-        elif not in_tag:
-            print(c, end="")
+def show(self, body):
+  in_tag = False
+  i = 0
+  while i < len(body):
+
+    if body.startswith("&lt;", i):
+      print("<", end="")
+      i += 4
+      continue
+
+    if body.startswith("&gt;", i):
+      print(">", end="")
+      i += 4
+      continue
+
+    c = body[i]
+
+    if c == "<":
+        in_tag = True
+    elif c == ">":
+        in_tag = False
+    elif not in_tag:
+        print(c, end="")
+
+    i += 1
+
 
 
 #loading the page and getting html
 def load(url):
   body = url.requests()
-  url.show(body)
+  if getattr(url, "view_source", False):
+    print(body)
+  else:
+    show(url,body)
+
 
 if __name__ == "__main__":
   import sys
   load(URL(sys.argv[1]))
+  
