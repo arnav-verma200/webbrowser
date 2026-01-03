@@ -40,7 +40,11 @@ class URL:
 
     
       
-  def requests(self):
+  def requests(self, redirect_count=0):
+    MAX_REDIRECTS = 5
+
+    if redirect_count > MAX_REDIRECTS:
+      raise Exception("Too many redirects")
     
     if self.scheme == "file":
       try:
@@ -86,7 +90,7 @@ class URL:
     
     response = s.makefile("r", encoding="utf8", newline="\r\n")
     statusline = response.readline()
-    version, stats, explanation = statusline.split(" ", 2)
+    version, status, explanation = statusline.split(" ", 2)
     
     response_headers = {}
     while True:
@@ -95,6 +99,25 @@ class URL:
         break
       header, value = line.split(":",1)
       response_headers[header.casefold()] = value.strip()
+      
+    # redirection handling
+    if 300 <= status < 400:
+      #if it is redirecting then we get the locations 
+      location = response_headers.get("location")
+      s.close()
+
+      #if location empty basicly do nothing
+      if not location:
+        return ""
+
+      #if it is hhts not hhtp
+      if location.startswith("http://") or location.startswith("https://"):
+        return URL(location).requests(redirect_count + 1)
+      
+      #if nothing from above 
+      else:
+        new_url = "{}://{}{}".format(self.scheme, self.host, location)
+        return URL(new_url).requests(redirect_count + 1)
       
     content = response.read()
     s.close()
@@ -141,4 +164,3 @@ def load(url):
 if __name__ == "__main__":
   import sys
   load(URL(sys.argv[1]))
-  
