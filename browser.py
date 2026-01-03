@@ -1,10 +1,12 @@
 import socket
+import ssl
+
 
 class URL:
   def __init__(self, url):
     #cutting url into host, scheme and path
     self.scheme, url = url.split("://",1)
-    assert self.scheme == "http"
+    assert self.scheme in ["http", "https"]
     
     if "/" not in url :
       url = url + "/"
@@ -12,12 +14,29 @@ class URL:
     self.host, url = url.split("/",1)
     self.path = "/" + url
     
+    #saving port for http or https because both have diff ports 
+    if self.scheme == "http":
+      self.port = 80
+    elif self.scheme == "https":
+      self.port = 443
+      
+    if ":" in self.host:
+      self.host, port = self.host.split(":", 1)
+      self.port = int(port)
+    
   def requests(self):
     #using socket to estabilish the connection
     s = socket.socket(
       family= socket.AF_INET,
       type= socket.SOCK_STREAM,)
-    s.connect((self.host, 80)) #establishing the connection
+    
+    s.connect((self.host, self.port)) #establishing the connection
+    if self.scheme == "https":
+      #used ssl to create a context ctx and use that context to wrap the socket s 
+      #that wrap_socket returns a new socket
+      ctx = ssl.create_default_context()
+      s = ctx.wrap_socket(s, server_hostname=self.host)
+
     
     request = "GET {} HTTP/1.1\r\n".format(self.path)
     request += "HOST: {}\r\n".format(self.host)
