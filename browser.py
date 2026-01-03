@@ -57,6 +57,7 @@ class URL:
     s.close()
     return content
 
+# getting the html from the page 
   def show(self, body):
     in_tag = False
     for c in body:
@@ -68,17 +69,11 @@ class URL:
             print(c, end="")
 
 
-
+#loading the page and getting html
 def load(url):
   body = url.requests()
   url.show(body)
 
 if __name__ == "__main__":
-  print("Normal HTML request: ")
-  ts = URL("http://example.org/index.html").requests()
-  print(ts)
-  print("______________________________________")
-  
-  
-  print("Proper Displaying the HTML")
-  load(URL("http://example.org/index.html"))
+  import sys
+  load(URL(sys.argv[1]))
