@@ -8,14 +8,30 @@ CACHE = {}
 
 class URL:
   def __init__(self, url):
+    if url == "about:blank":
+      self.scheme = "about"
+      self.path = ""
+      return
     
     self.view_source = False
     if url.startswith("view-source:"):
       self.view_source = True
       url = url[len("view-source:"):]
     
+    try:
     #cutting url into host, scheme and path
-    self.scheme, url = url.split("://",1)
+        self.scheme, url = url.split("://", 1)
+    except ValueError:
+        # Malformed URL → behave like about:blank
+        self.scheme = "about"
+        self.path = ""
+        return
+    
+    # Unknown scheme → treat as about:blank
+    if self.scheme not in ["http", "https", "file"]:
+      self.scheme = "about"
+      self.path = ""
+      return
     
     if self.scheme in ["http", "https"]:  
       if "/" not in url :
@@ -45,6 +61,8 @@ class URL:
     
       
   def requests(self, redirect_count=0):
+    if self.scheme == "about":
+      return ""
     
     #A cache key is like a unique label or address for a specific piece of temporary stored data
     if self.scheme == "file":
@@ -232,12 +250,17 @@ class Browser:
     self.scrollbar.pack(side="right", fill="y") #same as above
     self.scrollbar.config(command=self.on_scrollbar) #connect scrollbar to scroll logic
 
+    self.window.bind("<Configure>", self.on_resize) #<Configure> fires whenever: window resizes, window moves, layout changes
     self.canvas = tkinter.Canvas(
       self.window,
       width=Width,
       height=Height
     )
-    self.canvas.pack()
+    
+    #pack() tells: “Put this widget inside its parent window”
+    #fill="both" tells: "Stretch this widget to fill available space"
+    #expand=True tells: “If there is extra space, give it to THIS widget”
+    self.canvas.pack(fill="both", expand=True)
     self.scroll = 0 #how much we scrolled 
     self.window.bind("<Down>", self.scrolldown) #binding the buttons to scroll down
     self.window.bind("<Up>", self.scrollup) #binding the buttons to scroll up
@@ -252,6 +275,8 @@ class Browser:
     self.draw()
     
   def scrolldown(self, e): #scroll down function
+    if not self.display_list:
+      return
     self.scroll += self.scroll_step
     max_y = self.display_list[-1][1]
     max_scroll = max(0, max_y - Height)
@@ -260,6 +285,8 @@ class Browser:
     self.draw()
     
   def mousewheel(self, event):
+    if not self.display_list:
+      return
     self.scroll -= event.delta  # wheel up = positive delta
     """Why event.delta works
         On Windows:
@@ -274,6 +301,9 @@ class Browser:
     self.draw()
   
   def on_scrollbar(self, action, value, units=None):
+    if not self.display_list:
+      return
+
     if action == "moveto":
       fraction = float(value)
       max_y = self.display_list[-1][1]
@@ -296,29 +326,57 @@ class Browser:
   # drawing of characters
   def draw(self):
     self.canvas.delete("all")
-    for x, y, c in self.display_list :
-      if y > self.scroll + Height: continue
-      if y + VSTEP < self.scroll: continue
+
+    if not self.display_list:
+      self.scrollbar.set(0, 1)
+      return
+
+    for x, y, c in self.display_list:
+      if y > self.scroll + Height:
+        continue
+      if y + VSTEP < self.scroll:
+        continue
       self.canvas.create_text(x, y - self.scroll, text=c)
-      
-    #This keeps scrollbar thumb in sync.
+
     max_y = self.display_list[-1][1]
     max_scroll = max(0, max_y - Height)
+
     if max_scroll > 0:
-      self.scrollbar.set(self.scroll / max_scroll,
-                        (self.scroll + Height) / max_scroll)
+      self.scrollbar.set(
+        self.scroll / max_scroll,
+        (self.scroll + Height) / max_scroll
+      )
     else:
       self.scrollbar.set(0, 1)
-      
+
+  #resizing of a window
+  def on_resize(self, event):
+    global Width, Height
+    # Ignore tiny phantom resize events
+    if event.width < 100 or event.height < 100:
+        return
+    #new size of window
+    Width = event.width
+    Height = event.height
+
+    #This line exists to prevent a crash
+    #so it is just checking if load has text or not
+    #Yes → safe to re-layout and redraw
+    #No → do nothing, avoid crashing
+    if hasattr(self, "text"):
+        self.display_list = layout(self.text)
+        self.draw()
+
       
       
   def load(self, url):
-    
     body = url.requests()
+
     if getattr(url, "view_source", False):
       print(body)
     else:
       text = lex(body)
+      self.text = text #due to resizing as Because on resize, you must re-layout the same text
       self.display_list = layout(text)
       self.draw()
 
