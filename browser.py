@@ -204,30 +204,59 @@ def lex(body):
 
 
 Height, Width = 600,800
-HSTEP, VSTEP = 13, 18
+HSTEP, VSTEP = 8, 18
+
+#layout of characters like how they are layedout
+def layout(text):
+  display_list = []
+  cursor_x, cursor_y = HSTEP, VSTEP
+
+  for c in text:
+    display_list.append((cursor_x, cursor_y, c))
+    cursor_x += HSTEP
+
+    if cursor_x >= Width - HSTEP:
+      cursor_y += VSTEP
+      cursor_x = HSTEP
+  return display_list
 
 class Browser:
   def __init__(self):
-      self.window = tkinter.Tk()
-      self.canvas = tkinter.Canvas(
-        self.window,
-        width=Width,
-        height=Height
-      )
-      self.canvas.pack()
-  
-  def draw_text(self, text):
-    cursor_x, cursor_y = HSTEP, VSTEP
+    self.window = tkinter.Tk()
+    self.canvas = tkinter.Canvas(
+      self.window,
+      width=Width,
+      height=Height
+    )
+    self.canvas.pack()
+    self.scroll = 0 #how much we scrolled 
+    self.window.bind("<Down>", self.scrolldown) #binding the buttons to scroll down
+    self.window.bind("<Up>", self.scrollup) #binding the buttons to scroll up
+    
+    self.scroll_step = 100 #how much it should scroll in one tap of button
 
-    for c in text:
-      self.canvas.create_text(cursor_x, cursor_y, text=c)
-      cursor_x += HSTEP
-
-      if cursor_x >= Width - HSTEP:
-        cursor_y += VSTEP
-        cursor_x = HSTEP
+  def scrollup(self, e): #scroll up function
+    self.scroll -= self.scroll_step
+    if self.scroll < 0:
+      self.scroll = 0
+    self.draw()
+    
+  def scrolldown(self, e): #scroll down function
+    self.scroll += self.scroll_step
+    max_y = self.display_list[-1][1]
+    max_scroll = max(0, max_y - Height)
+    if self.scroll > max_scroll:
+      self.scroll = max_scroll
+    self.draw()
 
     
+  # drawing of characters
+  def draw(self):
+    self.canvas.delete("all")
+    for x, y, c in self.display_list :
+      self.canvas.create_text(x, y - self.scroll, text=c)
+      
+      
   def load(self, url):
     
     body = url.requests()
@@ -235,7 +264,8 @@ class Browser:
       print(body)
     else:
       text = lex(body)
-      self.draw_text(text)
+      self.display_list = layout(text)
+      self.draw()
 
 
 if __name__ == "__main__":
