@@ -212,6 +212,11 @@ def layout(text):
   cursor_x, cursor_y = HSTEP, VSTEP
 
   for c in text:
+    if c == "\n":
+      cursor_y += VSTEP * 2
+      cursor_x = HSTEP
+      continue
+    
     display_list.append((cursor_x, cursor_y, c))
     cursor_x += HSTEP
 
@@ -223,6 +228,10 @@ def layout(text):
 class Browser:
   def __init__(self):
     self.window = tkinter.Tk()
+    self.scrollbar = tkinter.Scrollbar(self.window, orient="vertical") #creating the window scrollbar
+    self.scrollbar.pack(side="right", fill="y") #same as above
+    self.scrollbar.config(command=self.on_scrollbar) #connect scrollbar to scroll logic
+
     self.canvas = tkinter.Canvas(
       self.window,
       width=Width,
@@ -233,6 +242,7 @@ class Browser:
     self.window.bind("<Down>", self.scrolldown) #binding the buttons to scroll down
     self.window.bind("<Up>", self.scrollup) #binding the buttons to scroll up
     
+    self.window.bind("<MouseWheel>", self.mousewheel)  # using mouse wheel to scroll
     self.scroll_step = 100 #how much it should scroll in one tap of button
 
   def scrollup(self, e): #scroll up function
@@ -248,6 +258,39 @@ class Browser:
     if self.scroll > max_scroll:
       self.scroll = max_scroll
     self.draw()
+    
+  def mousewheel(self, event):
+    self.scroll -= event.delta  # wheel up = positive delta
+    """Why event.delta works
+        On Windows:
+        Scroll up → event.delta = +120
+        Scroll down → event.delta = -120"""
+    max_y = self.display_list[-1][1]
+    max_scroll = max(0, max_y - Height)
+    if self.scroll < 0:
+        self.scroll = 0
+    if self.scroll > max_scroll:
+        self.scroll = max_scroll
+    self.draw()
+  
+  def on_scrollbar(self, action, value, units=None):
+    if action == "moveto":
+      fraction = float(value)
+      max_y = self.display_list[-1][1]
+      max_scroll = max(0, max_y - Height)
+      self.scroll = int(fraction * max_scroll)
+      self.draw()
+
+    elif action == "scroll":
+      amount = int(value)
+      if units == "units":
+        self.scroll += amount * 20
+      elif units == "pages":
+        self.scroll += amount * Height
+
+      self.scroll = max(0, self.scroll)
+      self.draw()
+
 
     
   # drawing of characters
@@ -257,6 +300,16 @@ class Browser:
       if y > self.scroll + Height: continue
       if y + VSTEP < self.scroll: continue
       self.canvas.create_text(x, y - self.scroll, text=c)
+      
+    #This keeps scrollbar thumb in sync.
+    max_y = self.display_list[-1][1]
+    max_scroll = max(0, max_y - Height)
+    if max_scroll > 0:
+      self.scrollbar.set(self.scroll / max_scroll,
+                        (self.scroll + Height) / max_scroll)
+    else:
+      self.scrollbar.set(0, 1)
+      
       
       
   def load(self, url):
