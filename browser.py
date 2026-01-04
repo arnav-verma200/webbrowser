@@ -1,3 +1,4 @@
+import tkinter
 import socket
 import ssl
 import os
@@ -46,7 +47,11 @@ class URL:
   def requests(self, redirect_count=0):
     
     #A cache key is like a unique label or address for a specific piece of temporary stored data
-    cache_key = f"{self.scheme}://{self.host}{self.path}"
+    if self.scheme == "file":
+      cache_key = f"{self.scheme}://{self.path}"
+    else:
+      cache_key = f"{self.scheme}://{self.host}{self.path}"
+
     
     if cache_key in CACHE:
       #checking if cache key exist or not
@@ -96,12 +101,7 @@ class URL:
     request += "HOST: {}\r\n".format(self.host)
     request += "Connection: close\r\n"  
     request += "\r\n"
-    """
-    HTTP/1.1 keeps connections alive by default 
-    Your response.read() may block or hang 
-    Servers may wait forever
-    so to fixx this we add: request += "Connection: close\r\n"
-    """
+    
     s.send(request.encode("utf8")) #sends requests to the server
     
     """
@@ -147,34 +147,15 @@ class URL:
         return URL(new_url).requests(redirect_count + 1)
     
     cache_control = response_headers.get("cache-control")
-    no_store = response_headers.get("no-store")
-    max_age = response_headers.get("max-age")
-    
-    print("OO")
-    print(cache_control)
-    print(no_store)
-    print(max_age)
-    print("OO")
     
     content = response.read()
     s.close()
     
-    if cache_control: #sees if cache control exist or not
+    if cache_control:
       cache_control = cache_control.lower()
 
       if "no-store" not in cache_control and "max-age=" in cache_control:
-        """
-        Only cache if BOTH are true:
-        "no-store" is NOT present
-        "max-age=" IS present
-        
-        No max-age → no expiry → unsafe to cache (for your assignment rules)
-        “DO NOT store this response anywhere.”
-        This overrides everything.
-        So if it exists → immediate rejection.
-        """
         try:
-          #gives the max time for which the thing can be in the cache
           max_age = int(cache_control.split("max-age=")[1].split(",")[0])
           
           #this just stores the data in the cache
@@ -192,44 +173,72 @@ class URL:
     
     return content
 
-# getting the html from the page 
-def show(self, body):
+
+def lex(body):
+  text = ""
   in_tag = False
   i = 0
   while i < len(body):
-
     if body.startswith("&lt;", i):
-      print("<", end="")
+      text += "<"
       i += 4
       continue
 
     if body.startswith("&gt;", i):
-      print(">", end="")
+      text += ">"
       i += 4
       continue
 
     c = body[i]
 
     if c == "<":
-        in_tag = True
+      in_tag = True
     elif c == ">":
-        in_tag = False
+      in_tag = False
     elif not in_tag:
-        print(c, end="")
+      text += c
 
     i += 1
 
+  return text
 
 
-#loading the page and getting html
-def load(url):
-  body = url.requests()
-  if getattr(url, "view_source", False):
-    print(body)
-  else:
-    show(url,body)
+Height, Width = 600,800
+HSTEP, VSTEP = 13, 18
+
+class Browser:
+  def __init__(self):
+      self.window = tkinter.Tk()
+      self.canvas = tkinter.Canvas(
+        self.window,
+        width=Width,
+        height=Height
+      )
+      self.canvas.pack()
+  
+  def draw_text(self, text):
+    cursor_x, cursor_y = HSTEP, VSTEP
+
+    for c in text:
+      self.canvas.create_text(cursor_x, cursor_y, text=c)
+      cursor_x += HSTEP
+
+      if cursor_x >= Width - HSTEP:
+        cursor_y += VSTEP
+        cursor_x = HSTEP
+
+    
+  def load(self, url):
+    
+    body = url.requests()
+    if getattr(url, "view_source", False):
+      print(body)
+    else:
+      text = lex(body)
+      self.draw_text(text)
 
 
 if __name__ == "__main__":
   import sys
-  load(URL(sys.argv[1]))
+  Browser().load(URL(sys.argv[1]))
+  tkinter.mainloop()
