@@ -1,6 +1,9 @@
 import socket
 import ssl
 import os
+import time
+
+CACHE = {}
 
 class URL:
   def __init__(self, url):
@@ -41,6 +44,29 @@ class URL:
     
       
   def requests(self, redirect_count=0):
+    
+    #A cache key is like a unique label or address for a specific piece of temporary stored data
+    cache_key = f"{self.scheme}://{self.host}{self.path}"
+    
+    if cache_key in CACHE:
+      #checking if cache key exist or not
+      entry = CACHE[cache_key]
+      if time.time() < entry["expires"]:
+
+        print("-----------------------------------")
+        print("cache hit:", cache_key)
+        print("-----------------------------------")
+        
+        return entry["body"]
+        """time.time() gets the current "now" time.
+        entry["expires"] is a timestamp in the future when the data becomes invalid.
+        If the current time is less than the expiration time, the data is still fresh. The program
+        returns the stored body immediately, skipping the need for a slow network request."""
+      else:
+        #if time expires it delets the cache
+        del CACHE[cache_key]
+    
+    
     MAX_REDIRECTS = 5
 
     if redirect_count > MAX_REDIRECTS:
@@ -91,6 +117,7 @@ class URL:
     response = s.makefile("r", encoding="utf8", newline="\r\n")
     statusline = response.readline()
     version, status, explanation = statusline.split(" ", 2)
+    status = int(status)
     
     response_headers = {}
     while True:
@@ -118,9 +145,51 @@ class URL:
       else:
         new_url = "{}://{}{}".format(self.scheme, self.host, location)
         return URL(new_url).requests(redirect_count + 1)
-      
+    
+    cache_control = response_headers.get("cache-control")
+    no_store = response_headers.get("no-store")
+    max_age = response_headers.get("max-age")
+    
+    print("OO")
+    print(cache_control)
+    print(no_store)
+    print(max_age)
+    print("OO")
+    
     content = response.read()
     s.close()
+    
+    if cache_control: #sees if cache control exist or not
+      cache_control = cache_control.lower()
+
+      if "no-store" not in cache_control and "max-age=" in cache_control:
+        """
+        Only cache if BOTH are true:
+        "no-store" is NOT present
+        "max-age=" IS present
+        
+        No max-age → no expiry → unsafe to cache (for your assignment rules)
+        “DO NOT store this response anywhere.”
+        This overrides everything.
+        So if it exists → immediate rejection.
+        """
+        try:
+          #gives the max time for which the thing can be in the cache
+          max_age = int(cache_control.split("max-age=")[1].split(",")[0])
+          
+          #this just stores the data in the cache
+          CACHE[cache_key] = {
+            "expires": time.time() + max_age,
+            "body": content
+          }
+          
+          print("-----------------------------------")
+          print(" Cached:", cache_key, f"(max-age={max_age})")
+          print("-----------------------------------")
+      
+        except:
+          pass    
+    
     return content
 
 # getting the html from the page 
