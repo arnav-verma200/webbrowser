@@ -5,6 +5,7 @@ import os
 import time
 import tkinter.font
 CACHE = {}
+FONTS = {}
 
 class URL:
   def __init__(self, url):
@@ -222,6 +223,15 @@ class Tag:
   def __init__(self, tag):
     self.tag = tag
 
+def get_font(size, weight, style):
+    key = (size, weight, style)
+    if key not in FONTS:
+        font = tkinter.font.Font(size=size, weight=weight,
+            slant=style)
+        label = tkinter.Label(font=font)
+        FONTS[key] = (font, label)
+    return FONTS[key][0]
+
 Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 
@@ -260,8 +270,6 @@ class Layout:
         self.cursor_x = HSTEP
         self.line = []
 
-
-
         
     def token(self, tok):
       # Line breaks & paragraphs
@@ -285,12 +293,7 @@ class Layout:
       #Font is stored per word, not globally
       if isinstance(tok, Text):
           for word in tok.text.split():
-              font = tkinter.font.Font(
-                  size=self.size,
-                  weight=self.weight,
-                  slant=self.style,
-              )
-
+              font = get_font(self.size, self.weight, self.style)
               w = font.measure(word)
 
               # wrap BEFORE adding the word
