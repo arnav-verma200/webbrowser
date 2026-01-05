@@ -190,12 +190,12 @@ class URL:
           pass    
     
     return content
-
-#What this does
-#Collects text outside tags → Text
-#Collects tag contents → Tag
-#Drops unfinished tags (browser-correct behavior)
 def lex(body):
+
+  #What this does
+  #Collects text outside tags → Text
+  #Collects tag contents → Tag
+  #Drops unfinished tags (browser-correct behavior)
   out = []
   buffer = ""
   in_tag = False
@@ -229,21 +229,52 @@ HSTEP, VSTEP = 8, 18
 class Layout:
     def __init__(self, tokens):
         self.display_list = []
+        self.line = []
         self.cursor_x = HSTEP
         self.cursor_y = VSTEP
         self.weight = "normal"
         self.style = "roman"
+        self.size = 16
 
+        
         for tok in tokens:
             self.token(tok)
     
+        self.flush()
+            
+    def flush(self):
+        if not self.line:
+            return
+        metrics = [font.metrics() for _, _, font in self.line]
+
+        max_ascent = max(m["ascent"] for m in metrics)
+        max_descent = max(m["descent"] for m in metrics)
+
+        baseline = self.cursor_y + max_ascent
+
+        for (x, word, font), m in zip(self.line, metrics):
+            y = baseline - m["ascent"]
+            self.display_list.append((x, y, word, font))
+
+        self.cursor_y = baseline + max_descent
+        self.cursor_x = HSTEP
+        self.line = []
+
+
+
+        
     def token(self, tok):
       # Line breaks & paragraphs
-      if isinstance(tok, Tag) and tok.tag in ("br", "p", "/p"):
-        font = tkinter.font.Font(size=16, weight=self.weight, slant=self.style)
-        self.cursor_x = HSTEP
-        self.cursor_y += font.metrics("linespace") * 1.25
-        return
+      if isinstance(tok, Tag):
+          if tok.tag == "br":
+              self.flush()
+              return
+
+          if tok.tag == "/p":
+              self.flush()
+              self.cursor_y += VSTEP
+              return
+
       
       # Text tokens
       #Only text gets laid out
@@ -253,24 +284,24 @@ class Layout:
       #Appends (x, y, word, font)
       #Font is stored per word, not globally
       if isinstance(tok, Text):
-        for word in tok.text.split():
-            font = tkinter.font.Font(
-                size=16,
-                weight=self.weight,
-                slant=self.style,
-                )
-            
-            w = font.measure(word)
-            
-            # Line wrapping
-            if self.cursor_x + w > Width - HSTEP:
-              self.cursor_y += font.metrics("linespace") * 1.25
-              self.cursor_x = HSTEP
+          for word in tok.text.split():
+              font = tkinter.font.Font(
+                  size=self.size,
+                  weight=self.weight,
+                  slant=self.style,
+              )
 
-            self.display_list.append((self.cursor_x, self.cursor_y, word, font))
+              w = font.measure(word)
 
-            self.cursor_x += w + font.measure(" ")
+              # wrap BEFORE adding the word
+              if self.cursor_x + w > Width - HSTEP:
+                  self.flush()
 
+              # now add word to the line
+              self.line.append((self.cursor_x, word, font))
+              self.cursor_x += w + font.measure(" ")
+
+              
       # Font state changes
       elif tok.tag == "i":
         self.style = "italic"
@@ -281,6 +312,15 @@ class Layout:
         self.weight = "bold"
       elif tok.tag == "/b":
         self.weight = "normal"
+      elif tok.tag == "big":
+        self.size += 4
+      elif tok.tag == "/big":
+        self.size -= 4
+      elif tok.tag == "small":
+        self.size -= 4
+      elif tok.tag == "/small":
+        self.size += 4
+
 
 class Browser:
   def __init__(self):
