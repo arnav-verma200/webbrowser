@@ -226,55 +226,61 @@ Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 
 #layout of characters like how they are layedout
-def layout(tokens):
-  display_list = []
-  cursor_x, cursor_y = HSTEP, VSTEP
+class Layout:
+    def __init__(self, tokens):
+        self.display_list = []
+        self.cursor_x = HSTEP
+        self.cursor_y = VSTEP
+        self.weight = "normal"
+        self.style = "roman"
 
-  #These are state variables that persist across tokens
-  weight = "normal"
-  style = "roman"
-  
-  for tok in tokens:
-    if hasattr(tok, "tag") and tok.tag in ("br", "p", "/p"):
-      cursor_x = HSTEP
-      cursor_y += font.metrics("linespace") * 1.25
-      continue
-
-    #Only text gets laid out
-    #Each word:
-    #Measures width
-    #Wraps line if needed
-    #Appends (x, y, word, font)
-    #Font is stored per word, not globally
-    if isinstance(tok, Text):
-      for word in tok.text.split():
-        font = tkinter.font.Font(
-          size= 16,
-          weight= weight,
-          slant= style
-        )
-
-        w = font.measure(word)
-        
-        if cursor_x + w > Width - HSTEP:
-          cursor_y += font.metrics("linespace") * 1.25
-          cursor_x = HSTEP
-
-        display_list.append((cursor_x, cursor_y, word, font))
-        cursor_x += w + font.measure(" ")
+        for tok in tokens:
+            self.token(tok)
     
-    
-    elif tok.tag == "i":
-      style = "italic"
-      #This changes future text, not past text
-    elif tok.tag == "/i":
-      style = "roman"
-    elif tok.tag == "b":
-      weight = "bold"
-    elif tok.tag == "/b":
-      weight = "normal"
-    
-  return display_list
+    def token(self, tok):
+      # Line breaks & paragraphs
+      if isinstance(tok, Tag) and tok.tag in ("br", "p", "/p"):
+        font = tkinter.font.Font(size=16, weight=self.weight, slant=self.style)
+        self.cursor_x = HSTEP
+        self.cursor_y += font.metrics("linespace") * 1.25
+        return
+      
+      # Text tokens
+      #Only text gets laid out
+      #Each word:
+      #Measures width
+      #Wraps line if needed
+      #Appends (x, y, word, font)
+      #Font is stored per word, not globally
+      if isinstance(tok, Text):
+        for word in tok.text.split():
+            font = tkinter.font.Font(
+                size=16,
+                weight=self.weight,
+                slant=self.style,
+                )
+            
+            w = font.measure(word)
+            
+            # Line wrapping
+            if self.cursor_x + w > Width - HSTEP:
+              self.cursor_y += font.metrics("linespace") * 1.25
+              self.cursor_x = HSTEP
+
+            self.display_list.append((self.cursor_x, self.cursor_y, word, font))
+
+            self.cursor_x += w + font.measure(" ")
+
+      # Font state changes
+      elif tok.tag == "i":
+        self.style = "italic"
+        ##This changes future text, not past text
+      elif tok.tag == "/i":
+        self.style = "roman"
+      elif tok.tag == "b":
+        self.weight = "bold"
+      elif tok.tag == "/b":
+        self.weight = "normal"
 
 class Browser:
   def __init__(self):
@@ -404,11 +410,10 @@ class Browser:
     #Yes → safe to re-layout and redraw
     #No → do nothing, avoid crashing
     if hasattr(self, "text"):
-        self.display_list = layout(self.text)
+        self.display_list = Layout(self.text).display_list
         self.draw()
-
-      
-      
+        
+        
   def load(self, url):
     body = url.requests()
     tokens = lex(body)
@@ -416,10 +421,10 @@ class Browser:
     if getattr(url, "view_source", False):
       print(body)
     else:
-      text = lex(body)
-      self.text = tokens #due to resizing as Because on resize, you must re-layout the same text
-      self.display_list = layout(tokens)
+      self.text = tokens   # store TOKENS for re-layout on resize
+      self.display_list = Layout(tokens).display_list
       self.draw()
+
 
 
 if __name__ == "__main__":
