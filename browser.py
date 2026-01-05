@@ -227,7 +227,7 @@ def lex(body):
       in_tag = True
       
     elif c == ">":
-      out.append(TextToken(buffer))
+      out.append(TagToken(buffer))
       buffer = ""
       in_tag = False
       
@@ -278,6 +278,11 @@ class HTMLParser:
     
     def get_attributes(self, text):
       parts = text.split()
+      
+      # Safety check: ignore empty tags
+      if not parts:
+        return "", {}
+      
       tag = parts[0].casefold()
       attributes = {}
       for attrpair in parts[1:]:
@@ -309,7 +314,7 @@ class HTMLParser:
         parent.children.append(node)
       else:
         parent = self.unfinished[-1] if self.unfinished else None
-        node = Element(tag, parent)
+        node = Element(tag, attributes, parent)
         self.unfinished.append(node)
     
     def finish(self):
@@ -320,30 +325,16 @@ class HTMLParser:
       return self.unfinished.pop()
     
     def parse(self):
-      self.unfinished = [Element("html", {}, None)]
-      text = ""
-      in_tag = False
-      
-      for c in self.body:
+        self.unfinished = [Element("html", {}, None)]
+        tokens = lex(self.body)  # Use the lex function!
         
-        if c == "<":
-          in_tag = True
-          if text: 
-            self.add_text(text)
-            text = ""
-            
-        elif c == ">":
-          in_tag = False
-          if text: 
-            self.add_text(text)
-            text = ""
-
-        else:
-          text += c
-      
-      if not in_tag and text:
-        self.add_text(text)
-      return self.finish()
+        for token in tokens:
+            if isinstance(token, TextToken):
+                self.add_text(token.text)
+            elif isinstance(token, TagToken):
+                self.add_tag(token.tag)
+        
+        return self.finish()
 
 
 def get_font(size, weight, style):
@@ -358,9 +349,10 @@ def get_font(size, weight, style):
 Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 
+
 class Layout:
-    #layout of characters like how they are layedout
-    def __init__(self, tokens):
+    # layout of characters, walking the node tree
+    def __init__(self, root):
         self.display_list = []
         self.line = []
         self.cursor_x = HSTEP
@@ -369,84 +361,93 @@ class Layout:
         self.style = "roman"
         self.size = 16
 
-        
-        for tok in tokens:
-            self.token(tok)
-    
+        # start recursive layout
+        self.recurse(root)
         self.flush()
+
+    # handle opening tags
+    def open_tag(self, tag):
+        if tag == "i":
+            self.style = "italic"
+        elif tag == "b":
+            self.weight = "bold"
+        elif tag == "big":
+            self.size += 4
+        elif tag == "small":
+            self.size -= 4
+
+    # handle closing tags
+    def close_tag(self, tag):
+        if tag == "i":
+            self.style = "roman"
+        elif tag == "b":
+            self.weight = "normal"
+        elif tag == "big":
+            self.size -= 4
+        elif tag == "small":
+            self.size += 4
+
+    # add a single word to the current line
+    def word(self, word):
+        font = get_font(self.size, self.weight, self.style)
+        w = font.measure(word)
+
+        # wrap line if needed
+        if self.cursor_x + w > Width - HSTEP:
+            self.flush()
+
+        # add word to the line
+        self.line.append((self.cursor_x, word, font))
+        self.cursor_x += w + font.measure(" ")
+
+
+    # recursive function to walk the node tree
+    def recurse(self, node):
+        if isinstance(node, Text):
+            for word in node.text.split():
+                self.word(word)
+        else:
+            # Handle block-level tags that should start on new line
+            if node.tag in ["p", "h1", "h2", "h3", "h4", "h5", "h6", "div", "li"]:
+                self.flush()  # End current line before block element
             
+            # Handle line break
+            if node.tag == "br":
+                self.flush()  # Force new line
+            else:
+                self.open_tag(node.tag)
+                for child in node.children:
+                    self.recurse(child)
+                self.close_tag(node.tag)
+            
+            # End line after block elements
+            if node.tag in ["p", "h1", "h2", "h3", "h4", "h5", "h6", "div", "li"]:
+                self.flush()
+                
+
+    # flush current line to display_list
     def flush(self):
         if not self.line:
             return
-        metrics = [font.metrics() for _, _, font in self.line]
 
+        # calculate line metrics
+        metrics = [font.metrics() for _, _, font in self.line]
         max_ascent = max(m["ascent"] for m in metrics)
         max_descent = max(m["descent"] for m in metrics)
-
         baseline = self.cursor_y + max_ascent
 
+        # append words to display_list
         for (x, word, font), m in zip(self.line, metrics):
             y = baseline - m["ascent"]
             self.display_list.append((x, y, word, font))
 
+        # update cursor for next line
         self.cursor_y = baseline + max_descent
         self.cursor_x = HSTEP
         self.line = []
 
         
-    def token(self, tok):
-      # Line breaks & paragraphs
-      #if isinstance(tok, Tag):
-       #   if tok.tag == "br":
-        #      self.flush()
-         #     return
-
-          #if tok.tag == "/p":
-           #   self.flush()
-            #  self.cursor_y += VSTEP
-             # return
-
-      
-      # Text tokens
-      #Only text gets laid out
-      #Each word:
-      #Measures width
-      #Wraps line if needed
-      #Appends (x, y, word, font)
-      #Font is stored per word, not globally
-      if isinstance(tok, TextToken):
-          for word in tok.text.split():
-              font = get_font(self.size, self.weight, self.style)
-              w = font.measure(word)
-
-              # wrap BEFORE adding the word
-              if self.cursor_x + w > Width - HSTEP:
-                  self.flush()
-
-              # now add word to the line
-              self.line.append((self.cursor_x, word, font))
-              self.cursor_x += w + font.measure(" ")
-
-              
-      # Font state changes
-      elif tok.tag == "i":
-        self.style = "italic"
-        ##This changes future text, not past text
-      elif tok.tag == "/i":
-        self.style = "roman"
-      elif tok.tag == "b":
-        self.weight = "bold"
-      elif tok.tag == "/b":
-        self.weight = "normal"
-      elif tok.tag == "big":
-        self.size += 4
-      elif tok.tag == "/big":
-        self.size -= 4
-      elif tok.tag == "small":
-        self.size -= 4
-      elif tok.tag == "/small":
-        self.size += 4
-
+        
 class Browser:
   def __init__(self):
     self.window = tkinter.Tk()
@@ -578,28 +579,29 @@ class Browser:
         self.display_list = Layout(self.text).display_list
         self.draw()
         
-        
+          
   def load(self, url):
-    body = url.requests()
-    tokens = lex(body)
-
-    if getattr(url, "view_source", False):
-      print(body)
-    else:
-      self.text = tokens   # store TOKENS for re-layout on resize
-      self.display_list = Layout(tokens).display_list
+      # fetch HTML content
+      body = url.requests()
+      # if view-source mode, just print the raw HTML
+      if getattr(url, "view_source", False):
+          print(body)
+          return
+      # parse HTML into a node tree
+      self.nodes = HTMLParser(body).parse()  # root Element
+      # create display list by walking the node tree
+      self.display_list = Layout(self.nodes).display_list
+      # redraw the canvas
       self.draw()
 
 if __name__ == "__main__":
     import sys
-
+    if len(sys.argv) < 2:
+        print("Usage: python browser.py <URL>")
+        sys.exit(1)
     url = URL(sys.argv[1])
-
-    #DEBUG PARSER
-    body = url.requests()
-    nodes = HTMLParser(body).parse()
-    print_tree(nodes)
-
-    #RUN BROWSER
-    Browser().load(url)
+    browser = Browser()
+    
+    browser.load(url)
     tkinter.mainloop()
+
