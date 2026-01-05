@@ -4,7 +4,6 @@ import ssl
 import os
 import time
 import tkinter.font
-
 CACHE = {}
 
 class URL:
@@ -192,76 +191,95 @@ class URL:
     
     return content
 
-
+#What this does
+#Collects text outside tags → Text
+#Collects tag contents → Tag
+#Drops unfinished tags (browser-correct behavior)
 def lex(body):
-  text = ""
+  out = []
+  buffer = ""
   in_tag = False
-  i = 0
-  while i < len(body):
-    if body.startswith("&lt;", i):
-      text += "<"
-      i += 4
-      continue
-
-    if body.startswith("&gt;", i):
-      text += ">"
-      i += 4
-      continue
-
-    c = body[i]
-
+  for c in body:
     if c == "<":
       in_tag = True
+      if buffer: out.append(Text(buffer))
+      buffer = ""
     elif c == ">":
       in_tag = False
-    elif not in_tag:
-      text += c
+      out.append(Tag(buffer))
+      buffer = ""
+    else:
+      buffer += c
+  if not in_tag and buffer:
+    out.append(Text(buffer))
+  return out
 
-    i += 1
+class Text:
+  def __init__(self, text):
+    self.text = text
 
-  return text
-
+class Tag:
+  def __init__(self, tag):
+    self.tag = tag
 
 Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 
 #layout of characters like how they are layedout
-def layout(text, font):
+def layout(tokens):
   display_list = []
   cursor_x, cursor_y = HSTEP, VSTEP
 
-  font = tkinter.font.Font()
-  paragraphs = text.split("\n")
-
-  for para in paragraphs:
-    words = para.split()
-    
-    for word in words:
-      w = font.measure(word)
-      
-      # If word doesn't fit, go to next line
-      if cursor_x + w > Width - HSTEP:
-        cursor_y += font.metrics("linespace") * 1.25
-        cursor_x = HSTEP
-        
-      # Place the word
-      display_list.append((cursor_x, cursor_y, word))
-      
-      # Move cursor past the word + space
-      cursor_x += w + font.measure(" ")
-
-    # paragraph break (this replaces c == "\n")
-    cursor_y += font.metrics("linespace") * 1.5
-    cursor_x = HSTEP
+  #These are state variables that persist across tokens
+  weight = "normal"
+  style = "roman"
   
-  return display_list
+  for tok in tokens:
+    if hasattr(tok, "tag") and tok.tag in ("br", "p", "/p"):
+      cursor_x = HSTEP
+      cursor_y += font.metrics("linespace") * 1.25
+      continue
 
+    #Only text gets laid out
+    #Each word:
+    #Measures width
+    #Wraps line if needed
+    #Appends (x, y, word, font)
+    #Font is stored per word, not globally
+    if isinstance(tok, Text):
+      for word in tok.text.split():
+        font = tkinter.font.Font(
+          size= 16,
+          weight= weight,
+          slant= style
+        )
+
+        w = font.measure(word)
+        
+        if cursor_x + w > Width - HSTEP:
+          cursor_y += font.metrics("linespace") * 1.25
+          cursor_x = HSTEP
+
+        display_list.append((cursor_x, cursor_y, word, font))
+        cursor_x += w + font.measure(" ")
+    
+    
+    elif tok.tag == "i":
+      style = "italic"
+      #This changes future text, not past text
+    elif tok.tag == "/i":
+      style = "roman"
+    elif tok.tag == "b":
+      weight = "bold"
+    elif tok.tag == "/b":
+      weight = "normal"
+    
+  return display_list
 
 class Browser:
   def __init__(self):
     self.window = tkinter.Tk()
-
-    self.font = tkinter.font.Font()
+    
     self.scrollbar = tkinter.Scrollbar(self.window, orient="vertical") #creating the window scrollbar
     self.scrollbar.pack(side="right", fill="y") #same as above
     self.scrollbar.config(command=self.on_scrollbar) #connect scrollbar to scroll logic
@@ -347,7 +365,7 @@ class Browser:
       self.scrollbar.set(0, 1)
       return
 
-    for x, y, c in self.display_list:
+    for x, y, word, font in self.display_list:
       if y > self.scroll + Height:
         continue
       if y + VSTEP < self.scroll:
@@ -355,11 +373,10 @@ class Browser:
       self.canvas.create_text(
       x,
       y - self.scroll,
-      text=c,
-      font=self.font,
+      text=word,
+      font=font,
       anchor="nw"
       )
-
 
     max_y = self.display_list[-1][1]
     max_scroll = max(0, max_y - Height)
@@ -387,20 +404,21 @@ class Browser:
     #Yes → safe to re-layout and redraw
     #No → do nothing, avoid crashing
     if hasattr(self, "text"):
-        self.display_list = layout(self.text, self.font)
+        self.display_list = layout(self.text)
         self.draw()
 
       
       
   def load(self, url):
     body = url.requests()
+    tokens = lex(body)
 
     if getattr(url, "view_source", False):
       print(body)
     else:
       text = lex(body)
-      self.text = text #due to resizing as Because on resize, you must re-layout the same text
-      self.display_list = layout(text, self.font)
+      self.text = tokens #due to resizing as Because on resize, you must re-layout the same text
+      self.display_list = layout(tokens)
       self.draw()
 
 
