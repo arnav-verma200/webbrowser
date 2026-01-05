@@ -3,6 +3,7 @@ import socket
 import ssl
 import os
 import time
+import tkinter.font
 
 CACHE = {}
 
@@ -225,27 +226,42 @@ Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 
 #layout of characters like how they are layedout
-def layout(text):
+def layout(text, font):
   display_list = []
   cursor_x, cursor_y = HSTEP, VSTEP
 
-  for c in text:
-    if c == "\n":
-      cursor_y += VSTEP * 2
-      cursor_x = HSTEP
-      continue
-    
-    display_list.append((cursor_x, cursor_y, c))
-    cursor_x += HSTEP
+  font = tkinter.font.Font()
+  paragraphs = text.split("\n")
 
-    if cursor_x >= Width - HSTEP:
-      cursor_y += VSTEP
-      cursor_x = HSTEP
+  for para in paragraphs:
+    words = para.split()
+    
+    for word in words:
+      w = font.measure(word)
+      
+      # If word doesn't fit, go to next line
+      if cursor_x + w > Width - HSTEP:
+        cursor_y += font.metrics("linespace") * 1.25
+        cursor_x = HSTEP
+        
+      # Place the word
+      display_list.append((cursor_x, cursor_y, word))
+      
+      # Move cursor past the word + space
+      cursor_x += w + font.measure(" ")
+
+    # paragraph break (this replaces c == "\n")
+    cursor_y += font.metrics("linespace") * 1.5
+    cursor_x = HSTEP
+  
   return display_list
+
 
 class Browser:
   def __init__(self):
     self.window = tkinter.Tk()
+
+    self.font = tkinter.font.Font()
     self.scrollbar = tkinter.Scrollbar(self.window, orient="vertical") #creating the window scrollbar
     self.scrollbar.pack(side="right", fill="y") #same as above
     self.scrollbar.config(command=self.on_scrollbar) #connect scrollbar to scroll logic
@@ -336,7 +352,14 @@ class Browser:
         continue
       if y + VSTEP < self.scroll:
         continue
-      self.canvas.create_text(x, y - self.scroll, text=c)
+      self.canvas.create_text(
+      x,
+      y - self.scroll,
+      text=c,
+      font=self.font,
+      anchor="nw"
+      )
+
 
     max_y = self.display_list[-1][1]
     max_scroll = max(0, max_y - Height)
@@ -364,7 +387,7 @@ class Browser:
     #Yes → safe to re-layout and redraw
     #No → do nothing, avoid crashing
     if hasattr(self, "text"):
-        self.display_list = layout(self.text)
+        self.display_list = layout(self.text, self.font)
         self.draw()
 
       
@@ -377,7 +400,7 @@ class Browser:
     else:
       text = lex(body)
       self.text = text #due to resizing as Because on resize, you must re-layout the same text
-      self.display_list = layout(text)
+      self.display_list = layout(text, self.font)
       self.draw()
 
 
