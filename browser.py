@@ -6,7 +6,10 @@ import time
 import tkinter.font
 CACHE = {}
 FONTS = {}
-
+SELF_CLOSING_TAGS = [
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+]
 class URL:
   def __init__(self, url):
     if url == "about:blank":
@@ -191,6 +194,22 @@ class URL:
           pass    
     
     return content
+
+class TextToken:
+  def __init__(self, text):
+    self.text = text
+
+  def __repr__(self):
+    return repr(self.text)
+
+class TagToken:
+  def __init__(self, tag):
+    self.tag = tag.strip().casefold()
+
+  def __repr__(self):
+    return "<" + self.tag + ">"
+
+
 def lex(body):
 
   #What this does
@@ -202,26 +221,130 @@ def lex(body):
   in_tag = False
   for c in body:
     if c == "<":
+      if buffer: 
+        out.append(TextToken(buffer))
+        buffer = ""
       in_tag = True
-      if buffer: out.append(Text(buffer))
-      buffer = ""
+      
     elif c == ">":
-      in_tag = False
-      out.append(Tag(buffer))
+      out.append(TextToken(buffer))
       buffer = ""
+      in_tag = False
+      
     else:
       buffer += c
-  if not in_tag and buffer:
-    out.append(Text(buffer))
+      
+  if buffer and not in_tag:
+    out.append(TextToken(buffer))
+  
   return out
 
 class Text:
-  def __init__(self, text):
+  def __init__(self, text, parent):
     self.text = text
-
-class Tag:
-  def __init__(self, tag):
+    self.children = []
+    self.parent = parent
+  def __repr__(self):
+    return repr(self.text)
+    
+class Element:
+  def __init__(self, tag, attributes, parent):
     self.tag = tag
+    self.attributes = attributes
+    self.children = []
+    self.parent = parent
+  def __repr__(self):
+    return "<" + self.tag + ">"
+###########################################################################
+def print_tree(node, indent=0):
+    print(" " * indent, node)
+    for child in node.children:
+        print_tree(child, indent + 2)
+###########################################################################
+class HTMLParser:
+    def __init__(self, body):
+      self.body = body
+      self.unfinished = []
+    
+    def add_text(self, text):
+      if text.isspace():
+        return
+      if not self.unfinished:
+        return  # safety: no open tags yet
+      
+      parent = self.unfinished[-1]
+      node = Text(text, parent)
+      parent.children.append(node)
+    
+    def get_attributes(self, text):
+      parts = text.split()
+      tag = parts[0].casefold()
+      attributes = {}
+      for attrpair in parts[1:]:
+        
+        if "=" in attrpair:
+          key, value = attrpair.split("=", 1)
+          
+          if len(value) > 2 and value[0] in ["'", "\""]:
+            value = value[1:-1]
+          
+          attributes[key.casefold()] = value
+        
+        else:
+          attributes[attrpair.casefold()] = ""
+      return tag, attributes
+    
+    def add_tag(self, tag):
+      tag, attributes = self.get_attributes(tag)
+      if tag.startswith("!"):
+        return
+      if tag.startswith("/"):
+        if len(self.unfinished) == 1: return
+        node = self.unfinished.pop()
+        parent = self.unfinished[-1]
+        parent.children.append(node)
+      elif tag in SELF_CLOSING_TAGS:
+        parent = self.unfinished[-1]
+        node = Element(tag, attributes, parent)
+        parent.children.append(node)
+      else:
+        parent = self.unfinished[-1] if self.unfinished else None
+        node = Element(tag, parent)
+        self.unfinished.append(node)
+    
+    def finish(self):
+      while len(self.unfinished) > 1:
+        node = self.unfinished.pop()
+        parent = self.unfinished[-1]
+        parent.children.append(node)
+      return self.unfinished.pop()
+    
+    def parse(self):
+      self.unfinished = [Element("html", {}, None)]
+      text = ""
+      in_tag = False
+      
+      for c in self.body:
+        
+        if c == "<":
+          in_tag = True
+          if text: 
+            self.add_text(text)
+            text = ""
+            
+        elif c == ">":
+          in_tag = False
+          if text: 
+            self.add_text(text)
+            text = ""
+
+        else:
+          text += c
+      
+      if not in_tag and text:
+        self.add_text(text)
+      return self.finish()
+
 
 def get_font(size, weight, style):
     key = (size, weight, style)
@@ -235,8 +358,8 @@ def get_font(size, weight, style):
 Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 
-#layout of characters like how they are layedout
 class Layout:
+    #layout of characters like how they are layedout
     def __init__(self, tokens):
         self.display_list = []
         self.line = []
@@ -273,15 +396,15 @@ class Layout:
         
     def token(self, tok):
       # Line breaks & paragraphs
-      if isinstance(tok, Tag):
-          if tok.tag == "br":
-              self.flush()
-              return
+      #if isinstance(tok, Tag):
+       #   if tok.tag == "br":
+        #      self.flush()
+         #     return
 
-          if tok.tag == "/p":
-              self.flush()
-              self.cursor_y += VSTEP
-              return
+          #if tok.tag == "/p":
+           #   self.flush()
+            #  self.cursor_y += VSTEP
+             # return
 
       
       # Text tokens
@@ -291,7 +414,7 @@ class Layout:
       #Wraps line if needed
       #Appends (x, y, word, font)
       #Font is stored per word, not globally
-      if isinstance(tok, Text):
+      if isinstance(tok, TextToken):
           for word in tok.text.split():
               font = get_font(self.size, self.weight, self.style)
               w = font.measure(word)
@@ -323,7 +446,6 @@ class Layout:
         self.size -= 4
       elif tok.tag == "/small":
         self.size += 4
-
 
 class Browser:
   def __init__(self):
@@ -468,9 +590,16 @@ class Browser:
       self.display_list = Layout(tokens).display_list
       self.draw()
 
-
-
 if __name__ == "__main__":
-  import sys
-  Browser().load(URL(sys.argv[1]))
-  tkinter.mainloop()
+    import sys
+
+    url = URL(sys.argv[1])
+
+    #DEBUG PARSER
+    body = url.requests()
+    nodes = HTMLParser(body).parse()
+    print_tree(nodes)
+
+    #RUN BROWSER
+    Browser().load(url)
+    tkinter.mainloop()
