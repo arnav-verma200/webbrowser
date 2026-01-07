@@ -10,6 +10,15 @@ SELF_CLOSING_TAGS = [
     "area", "base", "br", "col", "embed", "hr", "img", "input",
     "link", "meta", "param", "source", "track", "wbr",
 ]
+BLOCK_ELEMENTS = [
+    "html", "body", "article", "section", "nav", "aside",
+    "h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header",
+    "footer", "address", "p", "hr", "pre", "blockquote",
+    "ol", "ul", "menu", "li", "dl", "dt", "dd", "figure",
+    "figcaption", "main", "div", "table", "form", "fieldset",
+    "legend", "details", "summary"
+] 
+
 class URL:
   def __init__(self, url):
     if url == "about:blank":
@@ -195,12 +204,14 @@ class URL:
     
     return content
 
+
 class TextToken:
   def __init__(self, text):
     self.text = text
 
   def __repr__(self):
     return repr(self.text)
+
 
 class TagToken:
   def __init__(self, tag):
@@ -245,8 +256,9 @@ class Text:
     self.children = []
     self.parent = parent
   def __repr__(self):
-    return repr(self.text)
-    
+    return repr(self.text) 
+
+
 class Element:
   def __init__(self, tag, attributes, parent):
     self.tag = tag
@@ -255,12 +267,8 @@ class Element:
     self.parent = parent
   def __repr__(self):
     return "<" + self.tag + ">"
-###########################################################################
-def print_tree(node, indent=0):
-    print(" " * indent, node)
-    for child in node.children:
-        print_tree(child, indent + 2)
-###########################################################################
+
+
 class HTMLParser:
     def __init__(self, body):
       self.body = body
@@ -349,10 +357,19 @@ def get_font(size, weight, style):
 Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 
+def paint_tree(layout_object, display_list):
+    display_list.extend(layout_object.paint())
 
-class Layout:
-    # layout of characters, walking the node tree
-    def __init__(self, root):
+    for child in layout_object.children:
+        paint_tree(child, display_list)
+
+class BlockLayout:
+    # BlockLayout of characters, walking the node tree
+    def __init__(self, node, parent= None, previous= None):
+        self.node = node
+        self.parent = parent
+        self.previous = previous
+        self.children = []
         self.display_list = []
         self.line = []
         self.cursor_x = HSTEP
@@ -361,10 +378,69 @@ class Layout:
         self.style = "roman"
         self.size = 16
 
-        # start recursive layout
-        self.recurse(root)
+        self.x = None
+        self.y = None
+        self.width = None
+        self.height = None
+        
+    def paint(self):
+      return self.display_list
+    
+    
+    def layout_mode(self):
+      if isinstance(self.node, Text):
+        return "inline"
+      elif any([isinstance(child, Element) and \
+              child.tag in BLOCK_ELEMENTS
+              for child in self.node.children]):
+        return "block"
+      elif self.node.children:
+        return "inline"
+      else:
+        return "block"
+
+    def layout(self):
+      self.x = self.parent.x
+      self.y = self.parent.y if not self.previous else \
+      self.previous.y + self.previous.height
+      self.width = self.parent.width
+
+      mode = self.layout_mode()
+
+      if mode == "block":
+        previous = None
+        for child in self.node.children:
+          next = BlockLayout(child, self, previous)
+          self.children.append(next)
+          previous = next
+
+        for child in self.children:
+          child.layout()
+
+        self.height = sum(child.height for child in self.children)
+
+      else:
+        self.cursor_x = HSTEP
+        self.cursor_y = VSTEP
+        self.weight = "normal"
+        self.style = "roman"
+        self.size = 12
+
+        self.line = []
+        self.recurse(self.node)
         self.flush()
 
+        self.height = self.cursor_y
+
+
+
+    def layout_intermediate(self):
+      previous = None
+      for child in self.node.children:
+        next = BlockLayout(child, self, previous)
+        self.children.append(next)
+        previous = next
+    
     # handle opening tags
     def open_tag(self, tag):
         if tag == "i":
@@ -393,7 +469,7 @@ class Layout:
         w = font.measure(word)
 
         # wrap line if needed
-        if self.cursor_x + w > Width - HSTEP:
+        if self.cursor_x + w > self.width:
             self.flush()
 
         # add word to the line
@@ -437,8 +513,9 @@ class Layout:
         baseline = self.cursor_y + max_ascent
 
         # append words to display_list
-        for (x, word, font), m in zip(self.line, metrics):
-            y = baseline - m["ascent"]
+        for rel_x, word, font in self.line:
+            x = self.x + rel_x
+            y = self.y + baseline - font.metrics("ascent")
             self.display_list.append((x, y, word, font))
 
         # update cursor for next line
@@ -446,8 +523,29 @@ class Layout:
         self.cursor_x = HSTEP
         self.line = []
 
-        
-        
+class DocumentLayout:
+  def __init__(self, node):
+    self.node = node
+    self.children = []
+    
+    self.parent = None
+
+    self.x = HSTEP
+    self.y = VSTEP
+    self.width = Width - 2 * HSTEP
+    self.height = 0
+
+  def paint(self):
+    return []
+
+  
+  def layout(self):
+    child = BlockLayout(self.node, self, None)
+    self.children.append(child)
+    child.layout()
+    self.height = child.height
+
+
 class Browser:
   def __init__(self):
     self.window = tkinter.Tk()
@@ -455,8 +553,11 @@ class Browser:
     self.scrollbar = tkinter.Scrollbar(self.window, orient="vertical") #creating the window scrollbar
     self.scrollbar.pack(side="right", fill="y") #same as above
     self.scrollbar.config(command=self.on_scrollbar) #connect scrollbar to scroll logic
+    
+    self.display_list = []
 
-    self.window.bind("<Configure>", self.on_resize) #<Configure> fires whenever: window resizes, window moves, layout changes
+        
+    self.window.bind("<Configure>", self.on_resize) #<Configure> fires whenever: window resizes, window moves, BlockLayout changes
     self.canvas = tkinter.Canvas(
       self.window,
       width=Width,
@@ -573,26 +674,36 @@ class Browser:
 
     #This line exists to prevent a crash
     #so it is just checking if load has text or not
-    #Yes → safe to re-layout and redraw
+    #Yes → safe to re-BlockLayout and redraw
     #No → do nothing, avoid crashing
     if hasattr(self, "text"):
-        self.display_list = Layout(self.text).display_list
+        self.display_list = BlockLayout(self.text).display_list
         self.draw()
         
           
   def load(self, url):
-      # fetch HTML content
-      body = url.requests()
-      # if view-source mode, just print the raw HTML
-      if getattr(url, "view_source", False):
-          print(body)
-          return
-      # parse HTML into a node tree
-      self.nodes = HTMLParser(body).parse()  # root Element
-      # create display list by walking the node tree
-      self.display_list = Layout(self.nodes).display_list
-      # redraw the canvas
-      self.draw()
+    body = url.requests()
+
+    if getattr(url, "view_source", False):
+      print(body)
+      return
+
+    # parse HTML → DOM
+    self.nodes = HTMLParser(body).parse()
+
+    # DOM → layout tree
+    self.document = DocumentLayout(self.nodes)
+    self.document.layout()
+
+    # layout → display list
+    self.display_list = []
+    paint_tree(self.document, self.display_list)
+
+    self.scroll = 0
+    self.draw()
+
+
+
 
 if __name__ == "__main__":
     import sys
@@ -601,7 +712,5 @@ if __name__ == "__main__":
         sys.exit(1)
     url = URL(sys.argv[1])
     browser = Browser()
-    
     browser.load(url)
     tkinter.mainloop()
-
