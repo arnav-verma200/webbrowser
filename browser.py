@@ -363,6 +363,37 @@ def paint_tree(layout_object, display_list):
     for child in layout_object.children:
         paint_tree(child, display_list)
 
+class DrawText:
+  def __init__(self, x1, y1, text, font):
+    self.top = y1
+    self.left = x1
+    self.text = text
+    self.font = font
+    
+    self.bottom = y1 + font.metrics("linespace")
+  
+  def execute(self, scroll, canvas):
+    canvas.create_text(
+        self.left, self.top - scroll,
+        text=self.text,
+        font=self.font,
+        anchor='nw')
+    
+class DrawRect:
+  def __init__(self, x1, y1, x2, y2, color):
+    self.top = y1
+    self.left = x1
+    self.bottom = y2
+    self.right = x2
+    self.color = color
+    
+  def execute(self, scroll, canvas):
+    canvas.create_rectangle(
+      self.left, self.top - scroll,
+      self.right, self.bottom - scroll,
+      width=0,
+      fill=self.color)
+
 class BlockLayout:
     # BlockLayout of characters, walking the node tree
     def __init__(self, node, parent= None, previous= None):
@@ -384,7 +415,17 @@ class BlockLayout:
         self.height = None
         
     def paint(self):
-      return self.display_list
+      cmds = []
+      
+      if isinstance(self.node, Element) and self.node.tag == "pre":
+        x2 = self.x + self.width
+        y2 = self.y + self.height
+        cmds.append(DrawRect(self.x, self.y, x2, y2, "gray"))
+      
+      if self.layout_mode() == "inline":
+        for x, y, word, font in self.display_list:
+          cmds.append(DrawText(x, y, word, font))
+      return cmds
     
     
     def layout_mode(self):
@@ -575,6 +616,14 @@ class Browser:
     self.window.bind("<MouseWheel>", self.mousewheel)  # using mouse wheel to scroll
     self.scroll_step = 100 #how much it should scroll in one tap of button
 
+  def draw(self):
+    self.canvas.delete("all")
+    for cmd in self.display_list:
+      if cmd.top > self.scroll + Height: continue
+      if cmd.bottom < self.scroll: continue
+      cmd.execute(self.scroll, self.canvas)
+
+
   def scrollup(self, e): #scroll up function
     self.scroll -= self.scroll_step
     if self.scroll < 0:
@@ -585,7 +634,7 @@ class Browser:
     if not self.display_list:
       return
     self.scroll += self.scroll_step
-    max_y = self.display_list[-1][1]
+    max_y = self.display_list[-1].bottom
     max_scroll = max(0, max_y - Height)
     if self.scroll > max_scroll:
       self.scroll = max_scroll
@@ -599,7 +648,7 @@ class Browser:
         On Windows:
         Scroll up → event.delta = +120
         Scroll down → event.delta = -120"""
-    max_y = self.display_list[-1][1]
+    max_y = self.display_list[-1].bottom
     max_scroll = max(0, max_y - Height)
     if self.scroll < 0:
         self.scroll = 0
@@ -613,7 +662,7 @@ class Browser:
 
     if action == "moveto":
       fraction = float(value)
-      max_y = self.display_list[-1][1]
+      max_y = self.display_list[-1].bottom
       max_scroll = max(0, max_y - Height)
       self.scroll = int(fraction * max_scroll)
       self.draw()
@@ -628,39 +677,6 @@ class Browser:
       self.scroll = max(0, self.scroll)
       self.draw()
 
-
-    
-  # drawing of characters
-  def draw(self):
-    self.canvas.delete("all")
-
-    if not self.display_list:
-      self.scrollbar.set(0, 1)
-      return
-
-    for x, y, word, font in self.display_list:
-      if y > self.scroll + Height:
-        continue
-      if y + VSTEP < self.scroll:
-        continue
-      self.canvas.create_text(
-      x,
-      y - self.scroll,
-      text=word,
-      font=font,
-      anchor="nw"
-      )
-
-    max_y = self.display_list[-1][1]
-    max_scroll = max(0, max_y - Height)
-
-    if max_scroll > 0:
-      self.scrollbar.set(
-        self.scroll / max_scroll,
-        (self.scroll + Height) / max_scroll
-      )
-    else:
-      self.scrollbar.set(0, 1)
 
   #resizing of a window
   def on_resize(self, event):
@@ -701,8 +717,6 @@ class Browser:
 
     self.scroll = 0
     self.draw()
-
-
 
 
 if __name__ == "__main__":
