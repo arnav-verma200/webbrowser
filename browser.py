@@ -6,6 +6,8 @@ import time
 import tkinter.font
 CACHE = {}
 FONTS = {}
+Height, Width = 600,800
+HSTEP, VSTEP = 8, 18
 SELF_CLOSING_TAGS = [
     "area", "base", "br", "col", "embed", "hr", "img", "input",
     "link", "meta", "param", "source", "track", "wbr",
@@ -356,8 +358,6 @@ def get_font(size, weight, style):
         FONTS[key] = (font, label)
     return FONTS[key][0]
 
-Height, Width = 600,800
-HSTEP, VSTEP = 8, 18
 
 def paint_tree(layout_object, display_list):
     display_list.extend(layout_object.paint())
@@ -597,6 +597,18 @@ class Browser:
   def __init__(self):
     self.window = tkinter.Tk()
     
+    self.window.title("Web Browser")
+
+    # Create URL bar at the top
+    self.url_frame = tkinter.Frame(self.window)
+    self.url_frame.pack(side="top", fill="x", padx=5, pady=5)
+
+    url_label = tkinter.Label(self.url_frame, text="URL:")
+    url_label.pack(side="left")
+
+    self.url_entry = tkinter.Entry(self.url_frame, width=80)
+    self.url_entry.pack(side="left", fill="x", expand=True, padx=5)
+    
     self.scrollbar = tkinter.Scrollbar(self.window, orient="vertical") #creating the window scrollbar
     self.scrollbar.pack(side="right", fill="y") #same as above
     self.scrollbar.config(command=self.on_scrollbar) #connect scrollbar to scroll logic
@@ -704,6 +716,18 @@ class Browser:
         
           
   def load(self, url):
+    # Store and display the URL
+    self.current_url = url
+    if url.scheme == "file":
+      display_url = f"file://{url.path}"
+    elif url.scheme == "about":
+      display_url = "about:blank"
+    else:
+      display_url = f"{url.scheme}://{url.host}{url.path}"
+    
+    self.url_entry.delete(0, tkinter.END)
+    self.url_entry.insert(0, display_url)
+    
     body = url.requests()
 
     if getattr(url, "view_source", False):
