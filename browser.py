@@ -19,6 +19,7 @@ BLOCK_ELEMENTS = [
     "legend", "details", "summary"
 ] 
 
+
 class URL:
   def __init__(self, url):
     if url == "about:blank":
@@ -250,6 +251,7 @@ def lex(body):
   
   return out
 
+
 class Text:
   def __init__(self, text, parent):
     self.text = text
@@ -363,6 +365,7 @@ def paint_tree(layout_object, display_list):
     for child in layout_object.children:
         paint_tree(child, display_list)
 
+
 class DrawText:
   def __init__(self, x1, y1, text, font):
     self.top = y1
@@ -378,7 +381,8 @@ class DrawText:
         text=self.text,
         font=self.font,
         anchor='nw')
-    
+
+
 class DrawRect:
   def __init__(self, x1, y1, x2, y2, color):
     self.top = y1
@@ -393,6 +397,7 @@ class DrawRect:
       self.right, self.bottom - scroll,
       width=0,
       fill=self.color)
+
 
 class BlockLayout:
     # BlockLayout of characters, walking the node tree
@@ -563,6 +568,7 @@ class BlockLayout:
         self.cursor_y = baseline + max_descent
         self.cursor_x = HSTEP
         self.line = []
+
 
 class DocumentLayout:
   def __init__(self, node):
