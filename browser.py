@@ -12,14 +12,12 @@ SELF_CLOSING_TAGS = [
     "area", "base", "br", "col", "embed", "hr", "img", "input",
     "link", "meta", "param", "source", "track", "wbr",
 ]
-BLOCK_ELEMENTS = [
-    "html", "body", "article", "section", "nav", "aside",
-    "h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header",
-    "footer", "address", "p", "hr", "pre", "blockquote",
-    "ol", "ul", "menu", "li", "dl", "dt", "dd", "figure",
-    "figcaption", "main", "div", "table", "form", "fieldset",
-    "legend", "details", "summary"
-] 
+BLOCK_ELEMENTS = ["html", "body", "article", "section", "nav", "aside",
+                  "h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header",
+                  "footer", "address", "p", "hr", "pre", "blockquote",
+                  "ol", "ul", "menu", "li", "dl", "dt", "dd", "figure",
+                  "figcaption", "main", "div", "table", "form", "fieldset",
+                  "legend", "details", "summary"]
 
 
 class URL:
@@ -427,6 +425,15 @@ class BlockLayout:
         y2 = self.y + self.height
         cmds.append(DrawRect(self.x, self.y, x2, y2, "gray"))
       
+      if isinstance(self.node, Element) and self.node.tag == "li":
+        bullet_x = self.x - HSTEP
+        bullet_y = self.y
+        bullet_size = 4
+        cmds.append(DrawRect(bullet_x, bullet_y, 
+                              bullet_x + bullet_size, 
+                              bullet_y + bullet_size, 
+                              "black"))
+      
       if self.layout_mode() == "inline":
         for x, y, word, font in self.display_list:
           cmds.append(DrawText(x, y, word, font))
@@ -447,6 +454,10 @@ class BlockLayout:
 
     def layout(self):
       self.x = self.parent.x
+      
+      if isinstance(self.node, Element) and self.node.tag == "li":
+        self.x += 2 * HSTEP  # indent by 2 * HSTEP
+      
       self.y = self.parent.y if not self.previous else \
       self.previous.y + self.previous.height
       self.width = self.parent.width
