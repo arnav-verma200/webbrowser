@@ -95,10 +95,10 @@ class URL:
         print("-----------------------------------")
         
         return entry["body"]
-        """time.time() gets the current "now" time.
-        entry["expires"] is a timestamp in the future when the data becomes invalid.
-        If the current time is less than the expiration time, the data is still fresh. The program
-        returns the stored body immediately, skipping the need for a slow network request."""
+        #time.time() gets the current "now" time.
+        #entry["expires"] is a timestamp in the future when the data becomes invalid.
+        #If the current time is less than the expiration time, the data is still fresh. The program
+        #returns the stored body immediately, skipping the need for a slow network request.
       else:
         #if time expires it delets the cache
         del CACHE[cache_key]
@@ -150,6 +150,9 @@ class URL:
     statusline = response.readline()
     version, status, explanation = statusline.split(" ", 2)
     status = int(status)
+    version = int(version)
+    explanation = int(explanation)
+    
     
     response_headers = {}
     while True:
@@ -479,7 +482,7 @@ class BlockLayout:
           self.y += 25  # space for the header
       
       self.width = self.parent.width
-      
+
       mode = self.layout_mode()
 
       if mode == "block":
