@@ -425,6 +425,19 @@ class BlockLayout:
         y2 = self.y + self.height
         cmds.append(DrawRect(self.x, self.y, x2, y2, "gray"))
       
+      if isinstance(self.node, Element) and self.node.tag == "nav":
+        if self.node.attributes.get("id") == "toc":
+          # Draw gray background for header
+          header_height = 25  # height for the header
+          cmds.append(DrawRect(self.x, self.y, 
+                      self.x + self.width, 
+                      self.y + header_height, 
+                      "gray"))
+          # Draw "Table of Contents" text
+          font = get_font(16, "bold", "roman")
+          cmds.append(DrawText(self.x + HSTEP, self.y + 5, 
+                      "Table of Contents", font))
+      
       if isinstance(self.node, Element) and self.node.tag == "li":
         bullet_x = self.x - HSTEP
         bullet_y = self.y
@@ -460,8 +473,13 @@ class BlockLayout:
       
       self.y = self.parent.y if not self.previous else \
       self.previous.y + self.previous.height
+      
+      if isinstance(self.node, Element) and self.node.tag == "nav":
+        if self.node.attributes.get("id") == "toc":
+          self.y += 25  # space for the header
+      
       self.width = self.parent.width
-
+      
       mode = self.layout_mode()
 
       if mode == "block":
@@ -729,7 +747,7 @@ class Browser:
         self.display_list = BlockLayout(self.text).display_list
         self.draw()
         
-          
+        
   def load(self, url):
     # Store and display the URL
     self.current_url = url
@@ -773,3 +791,4 @@ if __name__ == "__main__":
     browser = Browser()
     browser.load(url)
     tkinter.mainloop()
+
