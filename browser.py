@@ -276,27 +276,52 @@ def lex(body):
   return out
 
 
+INHERITED_PROPERTIES = {
+    "font-size": "16px",
+    "font-style": "normal",
+    "font-weight": "normal",
+    "color": "black",
+}
+
 def style(node, rules):
     node.style = {}
 
+    # 1. INHERIT FROM PARENT (or defaults)
+    for prop, default in INHERITED_PROPERTIES.items():
+        if node.parent:
+            node.style[prop] = node.parent.style[prop]
+        else:
+            node.style[prop] = default
+
+    # 2. APPLY STYLESHEET RULES
     for selector, body in rules:
-      if not selector.matches(node): continue
-      for property, value in body.items():
-        node.style[property] = value
-    
+        if not selector.matches(node):
+            continue
+        for prop, val in body.items():
+            node.style[prop] = val
+
+    # 3. APPLY INLINE STYLE (HIGHEST PRIORITY)
     if isinstance(node, Element) and "style" in node.attributes:
-        print(f"DEBUG: Parsing style for {node.tag}: {node.attributes['style']}")  # ADD THIS
-        
-        pairs = {}
         parser = CSSParser(node.attributes["style"] + ";")
         pairs = parser.body()
-
-        print(f"DEBUG: Parsed pairs: {pairs}")  # ADD THIS
         for prop, val in pairs.items():
             node.style[prop] = val
 
+    # 4. COMPUTE FONT-SIZE (percent → px)
+    if node.style["font-size"].endswith("%"):
+        pct = float(node.style["font-size"][:-1]) / 100
+
+        if node.parent:
+            parent_px = int(node.parent.style["font-size"][:-2])
+        else:
+            parent_px = int(INHERITED_PROPERTIES["font-size"][:-2])
+
+        node.style["font-size"] = str(int(parent_px * pct)) + "px"
+
+    # 5. RECURSE
     for child in node.children:
         style(child, rules)
+
 
 
 def tree_to_list(tree, list):
