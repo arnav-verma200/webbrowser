@@ -70,9 +70,7 @@ class URL:
       self.path = os.path.normpath(url)
 
 
-    
-      
-  def requests(self, redirect_count=0):
+  def request(self, redirect_count=0):
     if self.scheme == "about":
       return ""
     
@@ -169,12 +167,12 @@ class URL:
 
       #if it is hhts not hhtp
       if location.startswith("http://") or location.startswith("https://"):
-        return URL(location).requests(redirect_count + 1)
+        return URL(location).request(redirect_count + 1)
       
       #if nothing from above 
       else:
         new_url = "{}://{}{}".format(self.scheme, self.host, location)
-        return URL(new_url).requests(redirect_count + 1)
+        return URL(new_url).request(redirect_count + 1)
     
     cache_control = response_headers.get("cache-control")
     
@@ -202,6 +200,35 @@ class URL:
           pass    
     
     return content
+  
+  def resolve(self, url):
+    # Absolute URL
+    if "://" in url:
+        return URL(url)
+
+    # Scheme-relative URL
+    if url.startswith("//"):
+        return URL(self.scheme + ":" + url)
+
+    # FILE URLs (Windows-safe)
+    if self.scheme == "file":
+        base_dir = os.path.dirname(self.path)
+        full_path = os.path.normpath(os.path.join(base_dir, url))
+        return URL("file://" + full_path)
+
+    # HTTP / HTTPS relative URLs
+    if not url.startswith("/"):
+        dir, _ = self.path.rsplit("/", 1)
+
+        while url.startswith("../"):
+            url = url[3:]
+            if "/" in dir:
+                dir, _ = dir.rsplit("/", 1)
+
+        url = dir + "/" + url
+
+    return URL(f"{self.scheme}://{self.host}:{self.port}{url}")
+
 
 
 class TextToken:
@@ -250,18 +277,34 @@ def lex(body):
   return out
 
 
-def style(node):
+def style(node, rules):
     node.style = {}
 
+    for selector, body in rules:
+      if not selector.matches(node): continue
+      for property, value in body.items():
+        node.style[property] = value
+    
     if isinstance(node, Element) and "style" in node.attributes:
         print(f"DEBUG: Parsing style for {node.tag}: {node.attributes['style']}")  # ADD THIS
-        pairs = CSSParser(node.attributes["style"]).body()
+        
+        pairs = {}
+        parser = CSSParser(node.attributes["style"] + ";")
+        pairs = parser.body()
+
         print(f"DEBUG: Parsed pairs: {pairs}")  # ADD THIS
         for prop, val in pairs.items():
             node.style[prop] = val
 
     for child in node.children:
-        style(child)
+        style(child, rules)
+
+
+def tree_to_list(tree, list):
+  list.append(tree)
+  for child in tree.children:
+    tree_to_list(child, list)
+  return list
 
 
 class Text:
@@ -524,10 +567,16 @@ class DrawText:
     self.bottom = y1 + font.metrics("linespace")
   
   def execute(self, scroll, canvas):
+    fill = "black"
+    if hasattr(self, "color"):
+        if not self.color.startswith(("rgba", "rgb", "hsl")):
+            fill = self.color
+
     canvas.create_text(
         self.left, self.top - scroll,
         text=self.text,
         font=self.font,
+        fill=fill,
         anchor='nw')
 
 
@@ -571,8 +620,13 @@ class BlockLayout:
       cmds = []
       
       if isinstance(self.node, Element):
-            bgcolor = self.node.style.get("background-color", "transparent")
-            if bgcolor != "transparent":
+              bgcolor = self.node.style.get("background-color", "transparent")
+
+              # Ignore unsupported CSS colors (rgba, rgb, hsl, etc.)
+              if bgcolor.startswith("rgba") or bgcolor.startswith("rgb") or bgcolor.startswith("hsl"):
+                  bgcolor = "transparent"
+              
+              if bgcolor != "transparent":
                 x2 = self.x + self.width
                 y2 = self.y + self.height
                 cmds.append(DrawRect(self.x, self.y, x2, y2, bgcolor))
@@ -613,18 +667,16 @@ class BlockLayout:
       
       return cmds
     
-    
     def layout_mode(self):
-      if isinstance(self.node, Text):
-        return "inline"
-      elif any([isinstance(child, Element) and \
-              child.tag in BLOCK_ELEMENTS
-              for child in self.node.children]):
+        if isinstance(self.node, Text):
+            return "inline"
+        if any(isinstance(child, Element) and child.tag in BLOCK_ELEMENTS
+              for child in self.node.children):
+            return "block"
+        if self.node.children:
+            return "inline"
         return "block"
-      elif self.node.children:
-        return "inline"
-      else:
-        return "block"
+
 
     def layout(self):
       self.x = self.parent.x
@@ -787,6 +839,13 @@ class DocumentLayout:
     self.height = child.height
 
 
+# Load default stylesheet
+try:
+  DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
+except FileNotFoundError:
+  DEFAULT_STYLE_SHEET = []
+
+
 class Browser:
   def __init__(self):
     self.window = tkinter.Tk()
@@ -892,59 +951,80 @@ class Browser:
 
   #resizing of a window
   def on_resize(self, event):
-    global Width, Height
-    # Ignore tiny phantom resize events
-    if event.width < 100 or event.height < 100:
-        return
-    #new size of window
-    Width = event.width
-    Height = event.height
+      global Width, Height
 
-    #This line exists to prevent a crash
-    #so it is just checking if load has text or not
-    #Yes → safe to re-BlockLayout and redraw
-    #No → do nothing, avoid crashing
-    if hasattr(self, "text"):
-        self.display_list = BlockLayout(self.text).display_list
-        self.draw()
+      if event.width < 100 or event.height < 100:
+          return
+
+      Width = event.width
+      Height = event.height
+
+      if not hasattr(self, "document"):
+          return
+
+      self.document.width = Width - 2 * HSTEP
+      self.document.children = []
+      self.document.layout()
+
+      self.display_list = []
+      paint_tree(self.document, self.display_list)
+      self.draw()
+
         
-        
+          
   def load(self, url):
-    # Store and display the URL
-    self.current_url = url
-    if url.scheme == "file":
-      display_url = f"file://{url.path}"
-    elif url.scheme == "about":
-      display_url = "about:blank"
-    else:
-      display_url = f"{url.scheme}://{url.host}{url.path}"
-    
-    self.url_entry.delete(0, tkinter.END)
-    self.url_entry.insert(0, display_url)
-    
-    body = url.requests()
+      # Store and display the URL
+      self.current_url = url
+      if url.scheme == "file":
+        display_url = f"file://{url.path}"
+      elif url.scheme == "about":
+        display_url = "about:blank"
+      else:
+        display_url = f"{url.scheme}://{url.host}{url.path}"
+      
+      self.url_entry.delete(0, tkinter.END)
+      self.url_entry.insert(0, display_url)
+      
+      body = url.request()
 
-    if getattr(url, "view_source", False):
-      print(body)
-      return
+      if getattr(url, "view_source", False):
+        print(body)
+        return
 
-    # parse HTML → DOM
-    self.nodes = HTMLParser(body).parse()
+      # parse HTML → DOM
+      self.nodes = HTMLParser(body).parse()
+      # Start with default styles
+      rules = DEFAULT_STYLE_SHEET.copy()
+      
+      # Load external stylesheets from <link> tags
+      links = [node.attributes["href"]
+              for node in tree_to_list(self.nodes, [])
+              if isinstance(node, Element)
+              and node.tag == "link"
+              and node.attributes.get("rel") == "stylesheet"
+              and "href" in node.attributes]
+      
+      for link in links:
+        style_url = url.resolve(link)
+        try:
+          body = style_url.request()
+        except:
+          continue
+        rules.extend(CSSParser(body).parse())
 
-    # APPLY INLINE CSS STYLES
-    style(self.nodes)
+      # APPLY CSS STYLES (including inline styles)
+      style(self.nodes, rules)
 
-    # DOM → layout tree
-    self.document = DocumentLayout(self.nodes)
-    self.document.layout()
+      # DOM → layout tree
+      self.document = DocumentLayout(self.nodes)
+      self.document.layout()
 
-    # layout → display list
-    self.display_list = []
-    paint_tree(self.document, self.display_list)
+      # layout → display list
+      self.display_list = []
+      paint_tree(self.document, self.display_list)
 
-    self.scroll = 0
-    self.draw()
-
+      self.scroll = 0
+      self.draw()
 
 if __name__ == "__main__":
     import sys
@@ -955,4 +1035,3 @@ if __name__ == "__main__":
     browser = Browser()
     browser.load(url)
     tkinter.mainloop()
-

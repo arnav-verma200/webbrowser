@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>CSS Test Page</title>
+
+    <!-- External stylesheet (relative path) -->
+    <link rel="stylesheet" href="test.css">
+  </head>
+
+  <body>
+
+    <h1>CSS Test Page</h1>
+
+    <p>
+      This paragraph should have a 
+      <b>bold</b> word and an 
+      <i>italic</i> word.
+    </p>
+
+    <p style="background-color: lightblue;">
+      This paragraph uses <b>INLINE CSS</b>.
+      Inline styles should override everything.
+    </p>
+
+    <div>
+      <p>
+        This paragraph is inside a div.
+        Descendant selectors should work.
+      </p>
+    </div>
+
+    <pre>
+This is a PRE block.
+It should have a gray background
+from the browser stylesheet.
+    </pre>
+
+    <ul>
+      <li>First list item</li>
+      <li>Second list item</li>
+      <li style="background-color: yellow;">Third item (inline style)</li>
+    </ul>
+
+    <p>
+      Small text <small>like this</small>
+      and big text <big>like this</big>.
+    </p>
+
+  </body>
+</html>
