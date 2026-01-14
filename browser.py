@@ -148,9 +148,6 @@ class URL:
     statusline = response.readline()
     version, status, explanation = statusline.split(" ", 2)
     status = int(status)
-    version = int(version)
-    explanation = int(explanation)
-    
     
     response_headers = {}
     while True:
@@ -253,6 +250,20 @@ def lex(body):
   return out
 
 
+def style(node):
+    node.style = {}
+
+    if isinstance(node, Element) and "style" in node.attributes:
+        print(f"DEBUG: Parsing style for {node.tag}: {node.attributes['style']}")  # ADD THIS
+        pairs = CSSParser(node.attributes["style"]).body()
+        print(f"DEBUG: Parsed pairs: {pairs}")  # ADD THIS
+        for prop, val in pairs.items():
+            node.style[prop] = val
+
+    for child in node.children:
+        style(child)
+
+
 class Text:
   def __init__(self, text, parent):
     self.text = text
@@ -272,6 +283,68 @@ class Element:
     return "<" + self.tag + ">"
 
 
+class CSSParser:
+  def __init__(self, s):
+    self.s = s
+    self.i = 0
+    
+  def whitespace(self):
+    while self.i < len(self.s) and self.s[self.i].isspace():
+      self.i += 1
+      
+  def word(self):
+    start = self.i
+    while self.i < len(self.s):
+      if self.s[self.i].isalnum() or self.s[self.i] in "#-.%":
+        self.i += 1
+      else:
+        break
+    if self.i == start:
+      raise Exception("Parsing error")
+    return self.s[start:self.i]
+  
+  def literal(self, literal):
+    if not (self.i < len(self.s) and self.s[self.i] == literal):
+      raise Exception("Parsing error")
+    self.i += 1
+    
+  def pair(self):
+    prop = self.word()
+    self.whitespace()
+    self.literal(":")
+    self.whitespace()
+    val = self.word()
+    return prop.casefold(), val
+  
+  def body(self):
+    pairs = {}
+    while self.i < len(self.s):
+      
+      try:
+        prop, val = self.pair()
+        pairs[prop] = val
+        self.whitespace()
+        self.literal(";")
+        self.whitespace()
+      except Exception:
+        why = self.ignore_until([";"])
+        if why == ";":
+          self.literal(";")
+          self.whitespace()
+        else:
+          break
+    
+    return pairs
+  
+  def ignore_until(self, chars):
+    while self.i < len(self.s):
+      if self.s[self.i] in chars:
+        return self.s[self.i]
+      else:
+        self.i += 1
+    return None
+
+
 class HTMLParser:
     def __init__(self, body):
       self.body = body
@@ -288,7 +361,30 @@ class HTMLParser:
       parent.children.append(node)
     
     def get_attributes(self, text):
-      parts = text.split()
+      # Don't split on all whitespace - need to handle quoted attributes
+      parts = []
+      current = ""
+      in_quotes = False
+      quote_char = None
+      
+      for char in text:
+        if char in ['"', "'"]:
+          if not in_quotes:
+            in_quotes = True
+            quote_char = char
+          elif char == quote_char:
+            in_quotes = False
+            quote_char = None
+          current += char
+        elif char.isspace() and not in_quotes:
+          if current:
+            parts.append(current)
+            current = ""
+        else:
+          current += char
+      
+      if current:
+        parts.append(current)
       
       # Safety check: ignore empty tags
       if not parts:
@@ -296,8 +392,8 @@ class HTMLParser:
       
       tag = parts[0].casefold()
       attributes = {}
+      
       for attrpair in parts[1:]:
-        
         if "=" in attrpair:
           key, value = attrpair.split("=", 1)
           
@@ -305,11 +401,11 @@ class HTMLParser:
             value = value[1:-1]
           
           attributes[key.casefold()] = value
-        
         else:
           attributes[attrpair.casefold()] = ""
+          
       return tag, attributes
-    
+        
     def add_tag(self, tag):
       tag, attributes = self.get_attributes(tag)
       if tag.startswith("!"):
@@ -421,6 +517,13 @@ class BlockLayout:
     def paint(self):
       cmds = []
       
+      if isinstance(self.node, Element):
+            bgcolor = self.node.style.get("background-color", "transparent")
+            if bgcolor != "transparent":
+                x2 = self.x + self.width
+                y2 = self.y + self.height
+                cmds.append(DrawRect(self.x, self.y, x2, y2, bgcolor))
+      
       if isinstance(self.node, Element) and self.node.tag == "pre":
         x2 = self.x + self.width
         y2 = self.y + self.height
@@ -451,6 +554,10 @@ class BlockLayout:
       if self.layout_mode() == "inline":
         for x, y, word, font in self.display_list:
           cmds.append(DrawText(x, y, word, font))
+          
+      if isinstance(self.node, Element):
+        print(self.node.tag, self.node.style)
+      
       return cmds
     
     
@@ -604,67 +711,6 @@ class BlockLayout:
         self.line = []
 
 
-class CSSParser:
-  def __init__(self, s):
-    self.s = s
-    self.i = 0
-    
-  def whitespace(self):
-    while self.i < len(self.s) and self.s[self.i].isspace():
-      self.i += 1
-      
-  def word(self):
-    start = self.i
-    while self.i < len(self.s):
-      if self.s[self.i].isalnum() or self.s[self.i] in "#-.%":
-        self.i = 1
-      else:
-        break
-    if not (self.i < start):
-      raise Exception("Parsing error")
-    return self.s[start:self.i]
-  
-  def literal(self, literal):
-    if not (self.i < len(self.s) and self.s[self.i] == literal):
-      raise Exception("Parsing error")
-    self.i += 1
-    
-  def pair(self):
-    prop = self.word()
-    self.whitespace()
-    self.literal(":")
-    self.whitespace()
-    val = self.word()
-    return prop.casefold(), val
-  
-  def body(self):
-    pairs = {}
-    while self.i < len(self.s):
-      
-      try:
-        prop, val = self.pair()
-        pairs[prop] = val
-        self.whitespace()
-        self.literal(";")
-        self.whitespace()
-      except Exception:
-        why = self.ignore_until([";"])
-        if why == ";":
-          self.literal(";")
-          self.whitespace()
-        else:
-          break
-    
-    return pairs
-  
-  def ignore_until(self, chars):
-    while self.i < len(self.s):
-      if self.s[self.i] in chars:
-        return self.s[self.i]
-      else:
-        self.i += 1
-    return None
-  
 class DocumentLayout:
   def __init__(self, node):
     self.node = node
@@ -831,6 +877,9 @@ class Browser:
 
     # parse HTML → DOM
     self.nodes = HTMLParser(body).parse()
+
+    # APPLY INLINE CSS STYLES
+    style(self.nodes)
 
     # DOM → layout tree
     self.document = DocumentLayout(self.nodes)
