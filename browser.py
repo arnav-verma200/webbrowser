@@ -283,6 +283,7 @@ INHERITED_PROPERTIES = {
     "color": "black",
 }
 
+
 def style(node, rules):
     node.style = {}
 
@@ -321,7 +322,6 @@ def style(node, rules):
     # 5. RECURSE
     for child in node.children:
         style(child, rules)
-
 
 
 def tree_to_list(tree, list):
@@ -375,6 +375,7 @@ class DescendantSelector:
   def cascade_priority(rule):
     selector, body = rule
     return selector.priority
+
 
 class CSSParser:
   def __init__(self, s):
@@ -587,16 +588,16 @@ def paint_tree(layout_object, display_list):
 
 
 class DrawText:
-  def __init__(self, x1, y1, text, font):
+  def __init__(self, x1, y1, text, font, color):
     self.top = y1
     self.left = x1
     self.text = text
     self.font = font
+    self.color = color
     
     self.bottom = y1 + font.metrics("linespace")
   
   def execute(self, scroll, canvas):
-    fill = "black"
     if hasattr(self, "color"):
         if not self.color.startswith(("rgba", "rgb", "hsl")):
             fill = self.color
@@ -605,7 +606,7 @@ class DrawText:
         self.left, self.top - scroll,
         text=self.text,
         font=self.font,
-        fill=fill,
+        fill=self.color,
         anchor='nw')
 
 
@@ -636,10 +637,7 @@ class BlockLayout:
         self.line = []
         self.cursor_x = HSTEP
         self.cursor_y = VSTEP
-        self.weight = "normal"
-        self.style = "roman"
-        self.size = 16
-
+        
         self.x = None
         self.y = None
         self.width = None
@@ -675,8 +673,13 @@ class BlockLayout:
                       "gray"))
           # Draw "Table of Contents" text
           font = get_font(16, "bold", "roman")
-          cmds.append(DrawText(self.x + HSTEP, self.y + 5, 
-                      "Table of Contents", font))
+          cmds.append(DrawText(
+                    self.x + HSTEP, 
+                    self.y + 5, 
+                    "Table of Contents", 
+                    font,
+                    "black"
+                    ))
       
       if isinstance(self.node, Element) and self.node.tag == "li":
         bullet_x = self.x - HSTEP
@@ -688,8 +691,8 @@ class BlockLayout:
                               "black"))
       
       if self.layout_mode() == "inline":
-        for x, y, word, font in self.display_list:
-          cmds.append(DrawText(x, y, word, font))
+        for x, y, word, font, color in self.display_list:
+          cmds.append(DrawText(x, y, word, font, color))
           
       if isinstance(self.node, Element):
         print(self.node.tag, self.node.style)
@@ -705,7 +708,6 @@ class BlockLayout:
         if self.node.children:
             return "inline"
         return "block"
-
 
     def layout(self):
       self.x = self.parent.x
@@ -743,9 +745,6 @@ class BlockLayout:
       else:
         self.cursor_x = HSTEP
         self.cursor_y = VSTEP
-        self.weight = "normal"
-        self.style = "roman"
-        self.size = 12
 
         self.line = []
         self.recurse(self.node)
@@ -753,91 +752,74 @@ class BlockLayout:
 
         self.height = self.cursor_y
 
-
-
     def layout_intermediate(self):
       previous = None
       for child in self.node.children:
         next = BlockLayout(child, self, previous)
         self.children.append(next)
         previous = next
-    
-    # handle opening tags
-    def open_tag(self, tag):
-        if tag == "i":
-            self.style = "italic"
-        elif tag == "b":
-            self.weight = "bold"
-        elif tag == "big":
-            self.size += 4
-        elif tag == "small":
-            self.size -= 4
 
-    # handle closing tags
-    def close_tag(self, tag):
-        if tag == "i":
-            self.style = "roman"
-        elif tag == "b":
-            self.weight = "normal"
-        elif tag == "big":
-            self.size -= 4
-        elif tag == "small":
-            self.size += 4
-
-    # add a single word to the current line
-    def word(self, word):
-        font = get_font(self.size, self.weight, self.style)
-        w = font.measure(word)
+    def word(self, node, word):
+      color = node.style["color"]
+      weight = node.style["font-weight"]
+      style = node.style["font-style"]
+      if style == "normal": style = "roman"
+      
+      font_size = node.style.get("font-size") or "16px"
+      # Handle named font sizes
+      if font_size == "small":
+        font_size = "13px"
+      elif font_size == "medium":
+        font_size = "16px"
+      elif font_size == "large":
+        font_size = "18px"
+        
+      if font_size in ["inherit", "initial", "unset"]:
+        font_size = "16px"
+      
+      try:
+        size = int(float(font_size[:-2]))
+      except (ValueError, IndexError):
+        size = 16
+      
+      font = get_font(size, weight, style)
+      w = font.measure(word)
 
         # wrap line if needed
-        if self.cursor_x + w > self.width:
-            self.flush()
+      if self.cursor_x + w > self.width:
+        self.flush()
 
-        # add word to the line
-        self.line.append((self.cursor_x, word, font))
-        self.cursor_x += w + font.measure(" ")
+      # add word to the line
+      self.line.append((self.cursor_x, word, font, color))
+      self.cursor_x += w + font.measure(" ")
 
-
-    # recursive function to walk the node tree
     def recurse(self, node):
+        # recursive function to walk the node tree
         if isinstance(node, Text):
             for word in node.text.split():
-                self.word(word)
+                self.word(node, word)
         else:
-            # Handle block-level tags that should start on new line
-            if node.tag in ["p", "h1", "h2", "h3", "h4", "h5", "h6", "div", "li"]:
-                self.flush()  # End current line before block element
-            
-            # Handle line break
             if node.tag == "br":
-                self.flush()  # Force new line
-            else:
-                self.open_tag(node.tag)
-                for child in node.children:
-                    self.recurse(child)
-                self.close_tag(node.tag)
-            
-            # End line after block elements
-            if node.tag in ["p", "h1", "h2", "h3", "h4", "h5", "h6", "div", "li"]:
-                self.flush()
-                
+              self.flush()
+            for child in node.children:
+              self.recurse(child)
 
-    # flush current line to display_list
     def flush(self):
+      # flush current line to display_list
         if not self.line:
             return
 
         # calculate line metrics
-        metrics = [font.metrics() for _, _, font in self.line]
+        metrics = [font.metrics() for x, word, font, color in self.line]
         max_ascent = max(m["ascent"] for m in metrics)
         max_descent = max(m["descent"] for m in metrics)
         baseline = self.cursor_y + max_ascent
 
         # append words to display_list
-        for rel_x, word, font in self.line:
+        for rel_x, word, font, color in self.line:
             x = self.x + rel_x
             y = self.y + baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font))
+            self.display_list.append((x, y, word, font, color))
 
         # update cursor for next line
         self.cursor_y = baseline + max_descent
@@ -868,8 +850,8 @@ class DocumentLayout:
     self.height = child.height
 
 
-# Load default stylesheet
 try:
+# Load default stylesheet
   DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
 except FileNotFoundError:
   DEFAULT_STYLE_SHEET = []
@@ -902,7 +884,8 @@ class Browser:
     self.canvas = tkinter.Canvas(
       self.window,
       width=Width,
-      height=Height
+      height=Height,
+      bg="white"
     )
     
     #pack() tells: “Put this widget inside its parent window”
@@ -922,7 +905,6 @@ class Browser:
       if cmd.top > self.scroll + Height: continue
       if cmd.bottom < self.scroll: continue
       cmd.execute(self.scroll, self.canvas)
-
 
   def scrollup(self, e): #scroll up function
     self.scroll -= self.scroll_step
@@ -977,9 +959,8 @@ class Browser:
       self.scroll = max(0, self.scroll)
       self.draw()
 
-
-  #resizing of a window
   def on_resize(self, event):
+      #resizing of a window
       global Width, Height
 
       if event.width < 100 or event.height < 100:
@@ -999,8 +980,6 @@ class Browser:
       paint_tree(self.document, self.display_list)
       self.draw()
 
-        
-          
   def load(self, url):
       # Store and display the URL
       self.current_url = url
@@ -1054,6 +1033,7 @@ class Browser:
 
       self.scroll = 0
       self.draw()
+
 
 if __name__ == "__main__":
     import sys
