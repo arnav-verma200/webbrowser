@@ -765,6 +765,15 @@ class BlockLayout:
       style = node.style["font-style"]
       if style == "normal": style = "roman"
       
+      if weight.isdigit():
+        weight_num = int(weight)
+        if weight_num >= 600:
+          weight = "bold"
+        else:
+          weight = "normal"
+      elif weight not in ["normal", "bold"]:
+        weight = "normal"
+      
       font_size = node.style.get("font-size") or "16px"
       # Handle named font sizes
       if font_size == "small":
