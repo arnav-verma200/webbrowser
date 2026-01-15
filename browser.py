@@ -850,7 +850,6 @@ class DocumentLayout:
 
   def paint(self):
     return []
-
   
   def layout(self):
     child = BlockLayout(self.node, self, None)
