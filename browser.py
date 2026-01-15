@@ -722,7 +722,18 @@ class BlockLayout:
         if self.node.attributes.get("id") == "toc":
           self.y += 25  # space for the header
       
-      self.width = self.parent.width
+      # Handle width property
+      if isinstance(self.node, Element):
+        width_prop = self.node.style.get("width", "auto")
+        if width_prop != "auto":
+          try:
+            self.width = int(float(width_prop.replace("px", "")))
+          except (ValueError, AttributeError):
+            self.width = self.parent.width
+        else:
+          self.width = self.parent.width
+      else:
+        self.width = self.parent.width
 
       mode = self.layout_mode()
 
@@ -740,8 +751,6 @@ class BlockLayout:
         for child in self.children:
           child.layout()
 
-        self.height = sum(child.height for child in self.children)
-
       else:
         self.cursor_x = HSTEP
         self.cursor_y = VSTEP
@@ -750,7 +759,29 @@ class BlockLayout:
         self.recurse(self.node)
         self.flush()
 
-        self.height = self.cursor_y
+      # Handle height property
+      if isinstance(self.node, Element):
+        height_prop = self.node.style.get("height", "auto")
+        if height_prop != "auto":
+          try:
+            self.height = int(float(height_prop.replace("px", "")))
+          except (ValueError, AttributeError):
+            # If height is invalid, use calculated height
+            if mode == "block":
+              self.height = sum(child.height for child in self.children)
+            else:
+              self.height = self.cursor_y
+        else:
+          # auto height - use calculated height
+          if mode == "block":
+            self.height = sum(child.height for child in self.children)
+          else:
+            self.height = self.cursor_y
+      else:
+        if mode == "block":
+          self.height = sum(child.height for child in self.children)
+        else:
+          self.height = self.cursor_y
 
     def layout_intermediate(self):
       previous = None
@@ -857,13 +888,11 @@ class DocumentLayout:
     child.layout()
     self.height = child.height
 
-
 try:
 # Load default stylesheet
   DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
 except FileNotFoundError:
   DEFAULT_STYLE_SHEET = []
-
 
 class Browser:
   def __init__(self):
