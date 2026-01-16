@@ -289,34 +289,47 @@ def style(node, rules):
         else:
             node.style[prop] = default
 
-    # 2. APPLY STYLESHEET RULES
-    matching_rules = []
+    # 2. COLLECT ALL MATCHING RULES WITH PRIORITIES
+    all_properties = {}  # prop -> [(priority, value), ...]
+    
     for selector, body in rules:
       if selector.matches(node):
-        matching_rules.append((selector, body))
+        base_priority = selector.priority
+        for prop, (val, important) in body.items():
+          priority = base_priority + (10000 if important else 0)
+          
+          if prop not in all_properties:
+            all_properties[prop] = []
+          all_properties[prop].append((priority, val))
     
-    matching_rules.sort(key=lambda rule: rule[0].priority)
-    
-    for selector, body in matching_rules:
-      for prop, val in body.items():
-        node.style[prop] = val
+    # Apply highest priority value for each property
+    for prop, values in all_properties.items():
+      values.sort(key=lambda x: x[0], reverse=True)
+      node.style[prop] = values[0][1]
 
-    # 3. APPLY INLINE STYLE (HIGHEST PRIORITY)
+    # 3. APPLY INLINE STYLE
     if isinstance(node, Element) and "style" in node.attributes:
         parser = CSSParser(node.attributes["style"] + ";")
         pairs = parser.body()
-        for prop, val in pairs.items():
-            node.style[prop] = val
+        
+        for prop, (val, important) in pairs.items():
+            inline_priority = 1000 + (10000 if important else 0)
+            
+            # Check if stylesheet has higher priority !important
+            if prop in all_properties:
+              max_stylesheet_priority = max(v[0] for v in all_properties[prop])
+              if inline_priority > max_stylesheet_priority:
+                node.style[prop] = val
+            else:
+              node.style[prop] = val
 
     # 4. COMPUTE FONT-SIZE (percent → px)
     if node.style["font-size"].endswith("%"):
         pct = float(node.style["font-size"][:-1]) / 100
-
         if node.parent:
             parent_px = int(node.parent.style["font-size"][:-2])
         else:
             parent_px = int(INHERITED_PROPERTIES["font-size"][:-2])
-
         node.style["font-size"] = str(int(parent_px * pct)) + "px"
 
     # 5. RECURSE
@@ -374,16 +387,32 @@ class TagSelector:
 
 class DescendantSelector:
   def __init__(self, ancestor, descendant):
-    self.ancestor = ancestor
-    self.descendant = descendant
-    self.priority = ancestor.priority + descendant.priority
+    # Flatten the selector chain into a list
+    if isinstance(ancestor, DescendantSelector):
+      self.selectors = ancestor.selectors + [descendant]
+    else:
+      self.selectors = [ancestor, descendant]
+    
+    self.priority = sum(sel.priority for sel in self.selectors)
     
   def matches(self, node):
-    if not self.descendant.matches(node): return False
-    while node.parent:
-      if self.ancestor.matches(node.parent): return True
-      node = node.parent
-    return False
+    # The rightmost selector must match the current node
+    if not self.selectors[-1].matches(node):
+      return False
+    
+    if len(self.selectors) == 1:
+      return True
+    
+    # Walk up the tree once, matching selectors right to left
+    selector_idx = len(self.selectors) - 2
+    current = node.parent
+    
+    while current is not None and selector_idx >= 0:
+      if self.selectors[selector_idx].matches(current):
+        selector_idx -= 1
+      current = current.parent
+    
+    return selector_idx < 0
 
   def cascade_priority(rule):
     selector, body = rule
@@ -458,18 +487,24 @@ class CSSParser:
       self.i += 1
     val = self.s[val_start:self.i].strip()
     
-    return prop.casefold(), val
+    # Check for !important flag
+    important = False
+    if "!important" in val:
+      important = True
+      val = val.replace("!important", "").strip()
+    
+    return prop.casefold(), val, important
   
   def body(self):
     pairs = {}
 
     while self.i < len(self.s) and self.s[self.i] != "}":
       try:
-        prop, val = self.pair()
+        prop, val, important = self.pair()
         
         expanded = self.expand_shorthand(prop, val)
         for key, value in expanded.items():
-          pairs[key] = value
+          pairs[key] = (value, important)
         
         self.whitespace()
         self.literal(";")
