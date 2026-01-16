@@ -10,12 +10,6 @@ Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 SELF_CLOSING_TAGS = ["area", "base", "br", "col", "embed", "hr", "img", "input",
                       "link", "meta", "param", "source", "track", "wbr"]
-BLOCK_ELEMENTS = ["html", "body", "article", "section", "nav", "aside",
-                  "h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header",
-                  "footer", "address", "p", "hr", "pre", "blockquote",
-                  "ol", "ul", "menu", "li", "dl", "dt", "dd", "figure",
-                  "figcaption", "main", "div", "table", "form", "fieldset",
-                  "legend", "details", "summary"]
 
 
 class URL:
@@ -281,6 +275,7 @@ INHERITED_PROPERTIES = {
     "font-style": "normal",
     "font-weight": "normal",
     "color": "black",
+    "display": "inline",
 }
 
 
@@ -456,7 +451,13 @@ class CSSParser:
     self.whitespace()
     self.literal(":")
     self.whitespace()
-    val = self.word()
+    
+    # Read value until semicolon or closing brace
+    val_start = self.i
+    while self.i < len(self.s) and self.s[self.i] not in [";", "}"]:
+      self.i += 1
+    val = self.s[val_start:self.i].strip()
+    
     return prop.casefold(), val
   
   def body(self):
@@ -465,7 +466,11 @@ class CSSParser:
     while self.i < len(self.s) and self.s[self.i] != "}":
       try:
         prop, val = self.pair()
-        pairs[prop] = val
+        
+        expanded = self.expand_shorthand(prop, val)
+        for key, value in expanded.items():
+          pairs[key] = value
+        
         self.whitespace()
         self.literal(";")
         self.whitespace()
@@ -479,6 +484,101 @@ class CSSParser:
         else:
           break
     return pairs
+  
+  def expand_shorthand(self, prop, val):
+    """Expand shorthand properties into individual properties"""
+    expanded = {}
+    
+    if prop == "font":
+      # font: [style] [weight] size [family]
+      # Examples: "italic bold 100% Times", "bold 16px Arial"
+      parts = val.split()
+      
+      # Defaults
+      style = "normal"
+      weight = "normal"
+      size = None
+      
+      for part in parts:
+        # Check for font-style
+        if part in ["italic", "oblique", "normal"]:
+          style = part
+        # Check for font-weight
+        elif part in ["bold", "bolder", "lighter", "normal"] or part.isdigit():
+          weight = part
+        # Check for font-size (contains px, %, em, or is a number followed by unit)
+        elif any(unit in part for unit in ["px", "%", "em", "pt", "rem"]):
+          size = part
+        # Anything else is treated as font-family (we'll ignore for now)
+        
+      # Only set properties if we found a valid size
+      if size:
+        expanded["font-style"] = style
+        expanded["font-weight"] = weight
+        expanded["font-size"] = size
+
+      else:
+        #invalid font shorthand, dont expand
+        expanded[prop] = val
+      
+    elif prop == "margin":
+      # margin: top [right] [bottom] [left]
+      parts = val.split()
+      if len(parts) == 1:
+        # All sides
+        expanded["margin-top"] = parts[0]
+        expanded["margin-right"] = parts[0]
+        expanded["margin-bottom"] = parts[0]
+        expanded["margin-left"] = parts[0]
+      elif len(parts) == 2:
+        # top/bottom, left/right
+        expanded["margin-top"] = parts[0]
+        expanded["margin-bottom"] = parts[0]
+        expanded["margin-right"] = parts[1]
+        expanded["margin-left"] = parts[1]
+      elif len(parts) == 3:
+        # top, left/right, bottom
+        expanded["margin-top"] = parts[0]
+        expanded["margin-right"] = parts[1]
+        expanded["margin-left"] = parts[1]
+        expanded["margin-bottom"] = parts[2]
+      elif len(parts) == 4:
+        # top, right, bottom, left (clockwise)
+        expanded["margin-top"] = parts[0]
+        expanded["margin-right"] = parts[1]
+        expanded["margin-bottom"] = parts[2]
+        expanded["margin-left"] = parts[3]
+    
+    elif prop == "padding":
+      # padding: same logic as margin
+      parts = val.split()
+      if len(parts) == 1:
+        expanded["padding-top"] = parts[0]
+        expanded["padding-right"] = parts[0]
+        expanded["padding-bottom"] = parts[0]
+        expanded["padding-left"] = parts[0]
+      elif len(parts) == 2:
+        expanded["padding-top"] = parts[0]
+        expanded["padding-bottom"] = parts[0]
+        expanded["padding-right"] = parts[1]
+        expanded["padding-left"] = parts[1]
+      elif len(parts) == 3:
+        expanded["padding-top"] = parts[0]
+        expanded["padding-right"] = parts[1]
+        expanded["padding-left"] = parts[1]
+        expanded["padding-bottom"] = parts[2]
+      elif len(parts) == 4:
+        expanded["padding-top"] = parts[0]
+        expanded["padding-right"] = parts[1]
+        expanded["padding-bottom"] = parts[2]
+        expanded["padding-left"] = parts[3]
+    
+    else:
+      # Not a shorthand property, return as-is
+      expanded[prop] = val
+    
+    return expanded
+  
   
   def ignore_until(self, chars):
     while self.i < len(self.s):
@@ -718,14 +818,19 @@ class BlockLayout:
       return cmds
     
     def layout_mode(self):
+
         if isinstance(self.node, Text):
             return "inline"
-        if any(isinstance(child, Element) and child.tag in BLOCK_ELEMENTS
+        
+        elif self.node.children:
+            if any(isinstance(child, Element) and child.style.get("display", "inline") == "block" 
               for child in self.node.children):
-            return "block"
-        if self.node.children:
-            return "inline"
-        return "block"
+                return "block"
+            else:
+              return "inline"
+        
+        else:
+          return "block"
 
     def layout(self):
       self.x = self.parent.x
@@ -812,7 +917,16 @@ class BlockLayout:
       color = node.style["color"]
       weight = node.style["font-weight"]
       style = node.style["font-style"]
-      if style == "normal": style = "roman"
+      
+      # Safety check: ensure style is valid
+      if not style or style == "":
+        style = "normal"
+      if style == "normal":
+        style = "roman"
+      
+      # Safety check: ensure weight is valid
+      if not weight or weight == "":
+        weight = "normal"
       
       if weight.isdigit():
         weight_num = int(weight)
@@ -831,6 +945,10 @@ class BlockLayout:
         font_size = "16px"
       elif font_size == "large":
         font_size = "18px"
+      
+      # Safety check: ensure font-size is valid
+      if not font_size or font_size == "":
+        font_size = "16px"
         
       if font_size in ["inherit", "initial", "unset"]:
         font_size = "16px"
@@ -843,7 +961,7 @@ class BlockLayout:
       font = get_font(size, weight, style)
       w = font.measure(word)
 
-        # wrap line if needed
+      # wrap line if needed
       if self.cursor_x + w > self.width:
         self.flush()
 
