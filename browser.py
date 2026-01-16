@@ -295,11 +295,16 @@ def style(node, rules):
             node.style[prop] = default
 
     # 2. APPLY STYLESHEET RULES
+    matching_rules = []
     for selector, body in rules:
-        if not selector.matches(node):
-            continue
-        for prop, val in body.items():
-            node.style[prop] = val
+      if selector.matches(node):
+        matching_rules.append((selector, body))
+    
+    matching_rules.sort(key=lambda rule: rule[0].priority)
+    
+    for selector, body in matching_rules:
+      for prop, val in body.items():
+        node.style[prop] = val
 
     # 3. APPLY INLINE STYLE (HIGHEST PRIORITY)
     if isinstance(node, Element) and "style" in node.attributes:
@@ -354,9 +359,22 @@ class TagSelector:
   def __init__(self, tag):
     self.tag = tag
     self.priority = 1
-  
+    self.class_name = None
+    
+    if tag.startswith("."):
+      self.class_name = tag[1:]
+      self.tag = None
+      self.priority = 10
+      
   def matches(self, node):
-    return isinstance(node, Element) and self.tag == node.tag
+    if not isinstance(node, Element):
+      return False
+
+    if self.class_name:
+      node_classes = node.attributes.get("class","").split()
+      return self.class_name in node_classes
+
+    return self.tag == node.tag
 
 
 class DescendantSelector:
