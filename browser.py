@@ -846,9 +846,6 @@ class BlockLayout:
       if self.layout_mode() == "inline":
         for x, y, word, font, color in self.display_list:
           cmds.append(DrawText(x, y, word, font, color))
-          
-      if isinstance(self.node, Element):
-        print(self.node.tag, self.node.style)
       
       return cmds
     
