@@ -1123,18 +1123,6 @@ class Browser:
     self.window = tkinter.Tk()
     
     self.window.title("Web Browser")
-
-    # Create URL bar at the top
-    self.url_frame = tkinter.Frame(self.window)
-    self.url_frame.pack(side="top", fill="x", padx=5, pady=5)
-
-    url_label = tkinter.Label(self.url_frame, text="URL:")
-    url_label.pack(side="left")
-
-    self.url_entry = tkinter.Entry(self.url_frame, width=80)
-    self.url_entry.pack(side="left", fill="x", expand=True, padx=5)
-    self.url_entry.bind("<Return>", self.on_url_submit)
-    
     
     self.scrollbar = tkinter.Scrollbar(self.window, orient="vertical") #creating the window scrollbar
     self.scrollbar.pack(side="right", fill="y") #same as above
@@ -1163,6 +1151,7 @@ class Browser:
     self.scroll_step = 100 #how much it should scroll in one tap of button
 
     self.window.bind("<Button-1>", self.click)
+    self.url = None
 
   def on_url_submit(self, event):
     url_text = self.url_entry.get()
@@ -1273,19 +1262,7 @@ class Browser:
       self.draw()
 
   def load(self, url):
-      # Store and display the URL
       self.url = url
-      self.current_url = url
-      if url.scheme == "file":
-        display_url = f"file://{url.path}"
-      elif url.scheme == "about":
-        display_url = "about:blank"
-      else:
-        display_url = f"{url.scheme}://{url.host}{url.path}"
-      
-      self.url_entry.delete(0, tkinter.END)
-      self.url_entry.insert(0, display_url)
-      
       body = url.request()
 
       if getattr(url, "view_source", False):
