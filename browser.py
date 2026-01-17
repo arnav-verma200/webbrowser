@@ -63,6 +63,13 @@ class URL:
         url = url[1:]   # remove leading '/'
       self.path = os.path.normpath(url)
 
+  def __str__(self):
+    port_part = ":" + str(self.port)
+    if self.scheme == "https" and self.port == 443:
+        port_part = ""
+    if self.scheme == "http" and self.port == 80:
+        port_part = ""
+    return self.scheme + "://" + self.host + port_part + self.path
 
   def request(self, redirect_count=0):
     if self.scheme == "about":
@@ -1173,6 +1180,24 @@ class Chrome:
       self.padding + self.font_height)
     
     self.bottom = self.tabbar_bottom
+    
+    self.urlbar_top = self.tabbar_bottom
+    self.urlbar_bottom = self.urlbar_top + \
+      self.font_height + 2*self.padding
+    self.bottom = self.urlbar_bottom
+    
+    back_width = self.font.measure("<") + 2*self.padding
+    self.back_rect = Rect(
+        self.padding,
+        self.urlbar_top + self.padding,
+        self.padding + back_width,
+        self.urlbar_bottom - self.padding)
+
+    self.address_rect = Rect(
+        self.back_rect.right + self.padding,
+        self.urlbar_top + self.padding,
+        Width - self.padding,
+        self.urlbar_bottom - self.padding)
   
   def tab_rect(self, i):
     tabs_start = self.newtab_rect.right + self.padding
@@ -1214,6 +1239,21 @@ class Chrome:
       bounds.left + self.padding, bounds.top + self.padding,
       "Tab {}".format(i), self.font, "black"))
     
+    # Draw back button
+    cmds.append(DrawOutline(self.back_rect, "black", 1))
+    cmds.append(DrawText(
+          self.back_rect.left + self.padding,
+          self.back_rect.top,
+          "<", self.font, "black"))
+    
+    # The address bar gets the current tab’s URL from the browser
+    cmds.append(DrawOutline(self.address_rect, "black", 1))
+    url = str(self.browser.active_tab.url)
+    cmds.append(DrawText(
+          self.address_rect.left + self.padding,
+          self.address_rect.top,
+          url, self.font, "black"))
+        
     # Draw the "+" button
     cmds.append(DrawOutline(self.newtab_rect, "black", 1))
     cmds.append(DrawText(
@@ -1226,6 +1266,7 @@ class Chrome:
       0, self.bottom, Width, self.bottom, 
       "black", 1))
     
+    
     return cmds
 
   def click(self, x, y):
@@ -1236,6 +1277,9 @@ class Chrome:
         if self.tab_rect(i).contains_point(x, y):
           self.browser.active_tab = tab
           break
+          
+        elif self.back_rect.contains_point(x, y):
+          self.browser.active_tab.go_back()
 
 
 class Rect:
@@ -1257,6 +1301,7 @@ class Tab:
     self.scroll_step = 100 #how much it should scroll in one tap of button
     self.url = None
     self.tab_height = tab_height
+    self.history = []
 
   def on_url_submit(self, event):
     url_text = self.url_entry.get()
@@ -1359,7 +1404,14 @@ class Tab:
       self.display_list = []
       paint_tree(self.document, self.display_list)
 
+  def go_back(self):
+    if len(self.history) > 1:
+      self.history.pop()
+      back = self.history.pop()
+      self.load(back)
+
   def load(self, url):
+      self.history.append(url)
       self.url = url
       body = url.request()
 
