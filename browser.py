@@ -1133,6 +1133,8 @@ class Browser:
 
     self.url_entry = tkinter.Entry(self.url_frame, width=80)
     self.url_entry.pack(side="left", fill="x", expand=True, padx=5)
+    self.url_entry.bind("<Return>", self.on_url_submit)
+    
     
     self.scrollbar = tkinter.Scrollbar(self.window, orient="vertical") #creating the window scrollbar
     self.scrollbar.pack(side="right", fill="y") #same as above
@@ -1160,6 +1162,35 @@ class Browser:
     self.window.bind("<MouseWheel>", self.mousewheel)  # using mouse wheel to scroll
     self.scroll_step = 100 #how much it should scroll in one tap of button
 
+    self.window.bind("<Button-1>", self.click)
+
+  def on_url_submit(self, event):
+    url_text = self.url_entry.get()
+    try:
+      new_url = URL(url_text)
+      self.load(new_url)
+    except:
+      pass
+
+  def click(self, e):
+    x, y = e.x, e.y
+    y += self.scroll
+    
+    objs = [obj for obj in tree_to_list(self.document, [])
+            if obj.x <= x < obj.x + obj.width
+            and obj.y <= y < obj.y + obj.height]
+    
+    if not objs : return
+    elt = objs[-1].node
+    
+    while elt:
+      if isinstance(elt, Text):
+        pass
+      elif elt.tag == "a" and "href" in elt.attributes:
+        url = self.url.resolve(elt.attributes["href"])
+        return self.load(url)
+      elt = elt.parent
+  
   def draw(self):
     self.canvas.delete("all")
     for cmd in self.display_list:
@@ -1243,6 +1274,7 @@ class Browser:
 
   def load(self, url):
       # Store and display the URL
+      self.url = url
       self.current_url = url
       if url.scheme == "file":
         display_url = f"file://{url.path}"
