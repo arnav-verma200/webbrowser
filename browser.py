@@ -10,7 +10,7 @@ Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 SELF_CLOSING_TAGS = ["area", "base", "br", "col", "embed", "hr", "img", "input",
                       "link", "meta", "param", "source", "track", "wbr"]
-
+LINE_SPACING_MULTIPLIER = 1.25  # Extra spacing between lines
 
 class URL:
   def __init__(self, url):
@@ -324,10 +324,14 @@ def style(node, rules):
               node.style[prop] = val
 
     # 4. COMPUTE FONT-SIZE (percent → px)
-    if node.style["font-size"].endswith("%"):
+    if node.style.get("font-size", "").endswith("%"):
         pct = float(node.style["font-size"][:-1]) / 100
         if node.parent:
-            parent_px = int(node.parent.style["font-size"][:-2])
+            parent_font = node.parent.style.get("font-size", "16px")
+            if parent_font and parent_font.endswith("px"):
+                parent_px = int(parent_font[:-2])
+            else:
+                parent_px = 16
         else:
             parent_px = int(INHERITED_PROPERTIES["font-size"][:-2])
         node.style["font-size"] = str(int(parent_px * pct)) + "px"
@@ -554,7 +558,7 @@ class CSSParser:
 
       else:
         #invalid font shorthand, dont expand
-        expanded[prop] = val
+        pass
       
     elif prop == "margin":
       # margin: top [right] [bottom] [left]
@@ -779,6 +783,105 @@ class DrawRect:
       fill=self.color)
 
 
+class LineLayout:
+  def __init__(self, node, parent, previous):
+    self.node = node
+    self.parent = parent
+    self.previous = previous
+    self.children = []
+  
+  def layout(self):
+    self.width = self.parent.width
+    self.x = self.parent.x
+    
+    if self.previous:
+      self.y = self.previous.y + self.previous.height
+    else:
+      self.y = self.parent.y
+    
+    for word in self.children:
+      word.layout()
+    
+    if not self.children:
+      self.height = 0
+      return
+      
+    max_ascent = max([word.font.metrics("ascent") for word in self.children])
+    baseline = self.y + 1.25 * max_ascent
+    
+    for word in self.children:
+        word.y = baseline - word.font.metrics("ascent")
+    
+    max_descent = max([word.font.metrics("descent") for word in self.children])
+    self.height = 1.25 * (max_ascent + max_descent)
+
+  def paint(self):
+    return []
+
+
+class TextLayout:
+  def __init__(self, node, word, parent, previous):
+    self.node = node
+    self.word = word
+    self.children = []
+    self.parent = parent
+    self.previous = previous
+  
+  def layout(self):
+      weight = self.node.style["font-weight"]
+      style = self.node.style["font-style"]
+      
+      # Safety check: ensure style is valid
+      if not style or style == "":
+        style = "normal"
+      if style == "normal": 
+        style = "roman"
+      
+      # Safety check: ensure weight is valid
+      if not weight or weight == "":
+        weight = "normal"
+      
+      if weight.isdigit():
+        weight_num = int(weight)
+        if weight_num >= 600:
+          weight = "bold"
+        else:
+          weight = "normal"
+      elif weight not in ["normal", "bold"]:
+        weight = "normal"
+      
+      font_size = self.node.style.get("font-size") or "16px"
+      
+      # Safety check: ensure font-size is valid
+      if not font_size or font_size == "":
+        font_size = "16px"
+        
+      if font_size in ["inherit", "initial", "unset"]:
+        font_size = "16px"
+      
+      try:
+        size = int(float(font_size[:-2]) * .75)
+      except (ValueError, IndexError):
+        size = 12  # default size after .75 multiplier
+      
+      self.font = get_font(size, weight, style)
+      
+      self.width = self.font.measure(self.word)
+
+      if self.previous:
+        space = self.previous.font.measure(" ")
+        self.x = self.previous.x + space + self.previous.width
+      else:
+        self.x = self.parent.x
+      
+      self.height = self.font.metrics("linespace")
+
+
+  def paint(self):
+    color = self.node.style["color"]
+    return [DrawText(self.x, self.y, self.word, self.font, color)]
+
+
 class BlockLayout:
     # BlockLayout of characters, walking the node tree
     def __init__(self, node, parent= None, previous= None):
@@ -786,15 +889,16 @@ class BlockLayout:
         self.parent = parent
         self.previous = previous
         self.children = []
-        self.display_list = []
-        self.line = []
-        self.cursor_x = HSTEP
-        self.cursor_y = VSTEP
         
         self.x = None
         self.y = None
         self.width = None
         self.height = None
+        
+    def new_line(self):
+        last_line = self.children[-1] if self.children else None
+        new_line = LineLayout(self.node, self, last_line)
+        self.children.append(new_line)
         
     def paint(self):
       cmds = []
@@ -843,9 +947,6 @@ class BlockLayout:
                               bullet_y + bullet_size, 
                               "black"))
       
-      if self.layout_mode() == "inline":
-        for x, y, word, font, color in self.display_list:
-          cmds.append(DrawText(x, y, word, font, color))
       
       return cmds
     
@@ -865,78 +966,61 @@ class BlockLayout:
           return "block"
 
     def layout(self):
+      # -------- position --------
       self.x = self.parent.x
-      
+
       if isinstance(self.node, Element) and self.node.tag == "li":
-        self.x += 2 * HSTEP  # indent by 2 * HSTEP
-      
-      self.y = self.parent.y if not self.previous else \
-      self.previous.y + self.previous.height
-      
+        self.x += 2 * HSTEP  # indent list items
+
+      if self.previous:
+        self.y = self.previous.y + self.previous.height
+      else:
+        self.y = self.parent.y
+
       if isinstance(self.node, Element) and self.node.tag == "nav":
         if self.node.attributes.get("id") == "toc":
-          self.y += 25  # space for the header
-      
-      # Handle width property
+          self.y += 25  # space for header
+
+      # -------- width --------
       if isinstance(self.node, Element):
         width_prop = self.node.style.get("width", "auto")
         if width_prop != "auto":
           try:
             self.width = int(float(width_prop.replace("px", "")))
-          except (ValueError, AttributeError):
+          except:
             self.width = self.parent.width
         else:
           self.width = self.parent.width
       else:
         self.width = self.parent.width
 
+      # -------- layout mode --------
       mode = self.layout_mode()
 
       if mode == "block":
         previous = None
         for child in self.node.children:
-          
           if isinstance(child, Element) and child.tag == "head":
             continue
-          
-          next = BlockLayout(child, self, previous)
-          self.children.append(next)
-          previous = next
+
+          block = BlockLayout(child, self, previous)
+          self.children.append(block)
+          previous = block
 
         for child in self.children:
           child.layout()
 
       else:
-        self.cursor_x = HSTEP
-        self.cursor_y = VSTEP
-
-        self.line = []
+        # inline layout
+        self.cursor_x = 0
+        self.new_line()
         self.recurse(self.node)
-        self.flush()
+        
+        for line in self.children:
+          line.layout()
 
-      # Handle height property
-      if isinstance(self.node, Element):
-        height_prop = self.node.style.get("height", "auto")
-        if height_prop != "auto":
-          try:
-            self.height = int(float(height_prop.replace("px", "")))
-          except (ValueError, AttributeError):
-            # If height is invalid, use calculated height
-            if mode == "block":
-              self.height = sum(child.height for child in self.children)
-            else:
-              self.height = self.cursor_y
-        else:
-          # auto height - use calculated height
-          if mode == "block":
-            self.height = sum(child.height for child in self.children)
-          else:
-            self.height = self.cursor_y
-      else:
-        if mode == "block":
-          self.height = sum(child.height for child in self.children)
-        else:
-          self.height = self.cursor_y
+      # -------- height --------
+      self.height = sum(child.height for child in self.children)
 
     def layout_intermediate(self):
       previous = None
@@ -946,60 +1030,54 @@ class BlockLayout:
         previous = next
 
     def word(self, node, word):
-      color = node.style["color"]
-      weight = node.style["font-weight"]
-      style = node.style["font-style"]
-      
-      # Safety check: ensure style is valid
-      if not style or style == "":
-        style = "normal"
-      if style == "normal":
-        style = "roman"
-      
-      # Safety check: ensure weight is valid
-      if not weight or weight == "":
-        weight = "normal"
-      
-      if weight.isdigit():
-        weight_num = int(weight)
-        if weight_num >= 600:
-          weight = "bold"
-        else:
-          weight = "normal"
-      elif weight not in ["normal", "bold"]:
-        weight = "normal"
-      
-      font_size = node.style.get("font-size") or "16px"
-      # Handle named font sizes
-      if font_size == "small":
-        font_size = "13px"
-      elif font_size == "medium":
-        font_size = "16px"
-      elif font_size == "large":
-        font_size = "18px"
-      
-      # Safety check: ensure font-size is valid
-      if not font_size or font_size == "":
-        font_size = "16px"
+        weight = node.style["font-weight"]
+        style = node.style["font-style"]
         
-      if font_size in ["inherit", "initial", "unset"]:
-        font_size = "16px"
-      
-      try:
-        size = int(float(font_size[:-2]))
-      except (ValueError, IndexError):
-        size = 16
-      
-      font = get_font(size, weight, style)
-      w = font.measure(word)
+        # Safety check: ensure style is valid
+        if not style or style == "":
+          style = "normal"
+        if style == "normal":
+          style = "roman"
+        
+        # Safety check: ensure weight is valid
+        if not weight or weight == "":
+          weight = "normal"
+        
+        if weight.isdigit():
+          weight_num = int(weight)
+          if weight_num >= 600:
+            weight = "bold"
+          else:
+            weight = "normal"
+        elif weight not in ["normal", "bold"]:
+          weight = "normal"
+        
+        font_size = node.style.get("font-size") or "16px"
+        
+        # Safety check: ensure font-size is valid
+        if not font_size or font_size == "":
+          font_size = "16px"
+          
+        if font_size in ["inherit", "initial", "unset"]:
+          font_size = "16px"
+        
+        try:
+          size = int(float(font_size[:-2]) * .75)
+        except (ValueError, IndexError):
+          size = 12  # default size after .75 multiplier
+        
+        font = get_font(size, weight, style)
+        w = font.measure(word)
 
-      # wrap line if needed
-      if self.cursor_x + w > self.width:
-        self.flush()
+        if self.cursor_x + w > self.width:
+          self.new_line()
+          
+        line = self.children[-1]
+        previous_word = line.children[-1] if line.children else None
+        text = TextLayout(node, word, line, previous_word)
+        line.children.append(text)
 
-      # add word to the line
-      self.line.append((self.cursor_x, word, font, color))
-      self.cursor_x += w + font.measure(" ")
+        self.cursor_x += w + font.measure(" ")
 
     def recurse(self, node):
         # recursive function to walk the node tree
@@ -1007,32 +1085,8 @@ class BlockLayout:
             for word in node.text.split():
                 self.word(node, word)
         else:
-            if node.tag == "br":
-              self.flush()
             for child in node.children:
               self.recurse(child)
-
-    def flush(self):
-      # flush current line to display_list
-        if not self.line:
-            return
-
-        # calculate line metrics
-        metrics = [font.metrics() for x, word, font, color in self.line]
-        max_ascent = max(m["ascent"] for m in metrics)
-        max_descent = max(m["descent"] for m in metrics)
-        baseline = self.cursor_y + max_ascent
-
-        # append words to display_list
-        for rel_x, word, font, color in self.line:
-            x = self.x + rel_x
-            y = self.y + baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font, color))
-
-        # update cursor for next line
-        self.cursor_y = baseline + max_descent
-        self.cursor_x = HSTEP
-        self.line = []
 
 
 class DocumentLayout:
@@ -1056,11 +1110,13 @@ class DocumentLayout:
     child.layout()
     self.height = child.height
 
+
 try:
 # Load default stylesheet
   DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
 except FileNotFoundError:
   DEFAULT_STYLE_SHEET = []
+
 
 class Browser:
   def __init__(self):
