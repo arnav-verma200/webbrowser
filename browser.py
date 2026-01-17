@@ -1118,39 +1118,11 @@ except FileNotFoundError:
   DEFAULT_STYLE_SHEET = []
 
 
-class Browser:
+class Tab:
   def __init__(self):
-    self.window = tkinter.Tk()
-    
-    self.window.title("Web Browser")
-    
-    self.scrollbar = tkinter.Scrollbar(self.window, orient="vertical") #creating the window scrollbar
-    self.scrollbar.pack(side="right", fill="y") #same as above
-    self.scrollbar.config(command=self.on_scrollbar) #connect scrollbar to scroll logic
-    
     self.display_list = []
-
-        
-    self.window.bind("<Configure>", self.on_resize) #<Configure> fires whenever: window resizes, window moves, BlockLayout changes
-    self.canvas = tkinter.Canvas(
-      self.window,
-      width=Width,
-      height=Height,
-      bg="white"
-    )
-    
-    #pack() tells: “Put this widget inside its parent window”
-    #fill="both" tells: "Stretch this widget to fill available space"
-    #expand=True tells: “If there is extra space, give it to THIS widget”
-    self.canvas.pack(fill="both", expand=True)
-    self.scroll = 0 #how much we scrolled 
-    self.window.bind("<Down>", self.scrolldown) #binding the buttons to scroll down
-    self.window.bind("<Up>", self.scrollup) #binding the buttons to scroll up
-    
-    self.window.bind("<MouseWheel>", self.mousewheel)  # using mouse wheel to scroll
+    self.scroll = 0 #how much we scrolled     
     self.scroll_step = 100 #how much it should scroll in one tap of button
-
-    self.window.bind("<Button-1>", self.click)
     self.url = None
 
   def on_url_submit(self, event):
@@ -1161,8 +1133,7 @@ class Browser:
     except:
       pass
 
-  def click(self, e):
-    x, y = e.x, e.y
+  def click(self, x, y):
     y += self.scroll
     
     objs = [obj for obj in tree_to_list(self.document, [])
@@ -1180,20 +1151,18 @@ class Browser:
         return self.load(url)
       elt = elt.parent
   
-  def draw(self):
-    self.canvas.delete("all")
+  def draw(self, canvas):
     for cmd in self.display_list:
       if cmd.top > self.scroll + Height: continue
       if cmd.bottom < self.scroll: continue
-      cmd.execute(self.scroll, self.canvas)
+      cmd.execute(self.scroll, canvas)
 
-  def scrollup(self, e): #scroll up function
+  def scrollup(self): #scroll up function
     self.scroll -= self.scroll_step
     if self.scroll < 0:
       self.scroll = 0
-    self.draw()
     
-  def scrolldown(self, e): #scroll down function
+  def scrolldown(self): #scroll down function
     if not self.display_list:
       return
     self.scroll += self.scroll_step
@@ -1201,7 +1170,6 @@ class Browser:
     max_scroll = max(0, max_y - Height)
     if self.scroll > max_scroll:
       self.scroll = max_scroll
-    self.draw()
     
   def mousewheel(self, event):
     if not self.display_list:
@@ -1217,7 +1185,6 @@ class Browser:
         self.scroll = 0
     if self.scroll > max_scroll:
         self.scroll = max_scroll
-    self.draw()
   
   def on_scrollbar(self, action, value, units=None):
     if not self.display_list:
@@ -1228,7 +1195,6 @@ class Browser:
       max_y = self.display_list[-1].bottom
       max_scroll = max(0, max_y - Height)
       self.scroll = int(fraction * max_scroll)
-      self.draw()
 
     elif action == "scroll":
       amount = int(value)
@@ -1238,7 +1204,6 @@ class Browser:
         self.scroll += amount * Height
 
       self.scroll = max(0, self.scroll)
-      self.draw()
 
   def on_resize(self, event):
       #resizing of a window
@@ -1259,7 +1224,6 @@ class Browser:
 
       self.display_list = []
       paint_tree(self.document, self.display_list)
-      self.draw()
 
   def load(self, url):
       self.url = url
@@ -1302,7 +1266,60 @@ class Browser:
       paint_tree(self.document, self.display_list)
 
       self.scroll = 0
-      self.draw()
+
+
+class Browser:
+  def __init__(self):
+    self.tabs = []
+    self.active_tab = None
+    
+    self.window = tkinter.Tk()
+    self.window.title("Web Browser")
+    
+    self.canvas = tkinter.Canvas(
+      self.window,
+      width=Width,
+      height=Height,
+      bg="white"
+    )
+    self.canvas.pack(fill="both", expand=True)
+    
+    self.window.bind("<Down>", self.handle_down)
+    self.window.bind("<Up>", self.handle_up)
+    self.window.bind("<MouseWheel>", self.handle_mousewheel)
+    self.window.bind("<Button-1>", self.handle_click)
+    self.window.bind("<Configure>", self.handle_resize)
+  
+  def handle_down(self, e):
+    self.active_tab.scrolldown()
+    self.draw()
+  
+  def handle_up(self, e):
+    self.active_tab.scrollup()
+    self.draw()
+  
+  def handle_mousewheel(self, e):
+    self.active_tab.mousewheel(e)
+    self.draw()
+  
+  def handle_click(self, e):
+    self.active_tab.click(e.x, e.y)
+    self.draw()
+  
+  def handle_resize(self, e):
+    self.active_tab.on_resize(e)
+    self.draw()
+  
+  def draw(self):
+    self.canvas.delete("all")
+    self.active_tab.draw(self.canvas)
+  
+  def new_tab(self, url):
+    new_tab = Tab()
+    new_tab.load(url)
+    self.active_tab = new_tab
+    self.tabs.append(new_tab)
+    self.draw()
 
 
 if __name__ == "__main__":
@@ -1310,7 +1327,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python browser.py <URL>")
         sys.exit(1)
-    url = URL(sys.argv[1])
-    browser = Browser()
-    browser.load(url)
+    Browser().new_tab(URL(sys.argv[1]))
     tkinter.mainloop()
