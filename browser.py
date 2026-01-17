@@ -12,6 +12,7 @@ SELF_CLOSING_TAGS = ["area", "base", "br", "col", "embed", "hr", "img", "input",
                       "link", "meta", "param", "source", "track", "wbr"]
 LINE_SPACING_MULTIPLIER = 1.25  # Extra spacing between lines
 
+# Handles URL parsing, scheme detection, and HTTP/HTTPS requests with caching
 class URL:
   def __init__(self, url):
     if url == "about:blank":
@@ -231,6 +232,7 @@ class URL:
     return URL(f"{self.scheme}://{self.host}:{self.port}{url}")
 
 
+# Represents text content tokens from HTML parsing
 class TextToken:
   def __init__(self, text):
     self.text = text
@@ -239,6 +241,7 @@ class TextToken:
     return repr(self.text)
 
 
+# Represents HTML tag tokens from lexing
 class TagToken:
   def __init__(self, tag):
     self.tag = tag.strip().casefold()
@@ -355,6 +358,7 @@ def tree_to_list(tree, list):
   return list
 
 
+# Represents text nodes in the DOM tree
 class Text:
   def __init__(self, text, parent):
     self.text = text
@@ -364,6 +368,7 @@ class Text:
     return repr(self.text) 
 
 
+# Represents HTML element nodes with tags and attributes
 class Element:
   def __init__(self, tag, attributes, parent):
     self.tag = tag
@@ -374,6 +379,7 @@ class Element:
     return "<" + self.tag + ">"
 
 
+# Selects DOM elements by tag name or CSS class
 class TagSelector:
   def __init__(self, tag):
     self.tag = tag
@@ -396,6 +402,7 @@ class TagSelector:
     return self.tag == node.tag
 
 
+# Selects elements based on ancestor-descendant relationships
 class DescendantSelector:
   def __init__(self, ancestor, descendant):
     # Flatten the selector chain into a list
@@ -430,6 +437,7 @@ class DescendantSelector:
     return selector.priority
 
 
+# Parses CSS stylesheets into rules and properties
 class CSSParser:
   def __init__(self, s):
     self.s = s
@@ -635,6 +643,7 @@ class CSSParser:
     return None
 
 
+# Parses HTML strings into a DOM tree structure
 class HTMLParser:
     def __init__(self, body):
       self.body = body
@@ -751,6 +760,7 @@ def paint_tree(layout_object, display_list):
         paint_tree(child, display_list)
 
 
+# Command to draw text on the canvas
 class DrawText:
   def __init__(self, x1, y1, text, font, color):
     self.top = y1
@@ -778,6 +788,7 @@ class DrawText:
       anchor='nw')
 
 
+# Command to draw filled rectangles on the canvas
 class DrawRect:
   def __init__(self, x1, y1, x2, y2, color):
     self.top = y1
@@ -794,6 +805,7 @@ class DrawRect:
       fill=self.color)
 
 
+# Lays out text content into horizontal lines
 class LineLayout:
   def __init__(self, node, parent, previous):
     self.node = node
@@ -830,6 +842,7 @@ class LineLayout:
     return []
 
 
+# Lays out individual words within a line
 class TextLayout:
   def __init__(self, node, word, parent, previous):
     self.node = node
@@ -893,6 +906,7 @@ class TextLayout:
     return [DrawText(self.x, self.y, self.word, self.font, color)]
 
 
+# Lays out block-level HTML elements
 class BlockLayout:
     # BlockLayout of characters, walking the node tree
     def __init__(self, node, parent= None, previous= None):
@@ -1106,6 +1120,7 @@ class BlockLayout:
               self.recurse(child)
 
 
+# Lays out the entire document structure
 class DocumentLayout:
   def __init__(self, node):
     self.node = node
@@ -1135,6 +1150,7 @@ except FileNotFoundError:
   DEFAULT_STYLE_SHEET = []
 
 
+# Command to draw rectangle outlines on the canvas
 class DrawOutline:
   def __init__(self, rect, color, thickness):
     self.rect = rect
@@ -1149,6 +1165,7 @@ class DrawOutline:
             outline=self.color)
 
 
+# Command to draw lines on the canvas
 class DrawLine:
   def __init__(self, x1, y1, x2, y2, color, thickness):
     self.rect = Rect(x1, y1, x2, y2)
@@ -1162,6 +1179,7 @@ class DrawLine:
             fill=self.color, width=self.thickness)
 
 
+# Manages the browser's user interface chrome (tabs, address bar, buttons)
 class Chrome:
   def __init__(self, browser):
     self.browser = browser
@@ -1282,6 +1300,7 @@ class Chrome:
           self.browser.active_tab.go_back()
 
 
+# Represents rectangular areas for layout calculations
 class Rect:
   def __init__(self, left, top, right, bottom):
     self.left = left
@@ -1294,6 +1313,7 @@ class Rect:
       and y >= self.top and y < self.bottom
 
 
+# Represents a browser tab containing a web page
 class Tab:
   def __init__(self, tab_height):
     self.display_list = []
@@ -1454,6 +1474,7 @@ class Tab:
       self.scroll = 0
 
 
+# Main browser application managing tabs and UI
 class Browser:
   def __init__(self):
     self.tabs = []
