@@ -1219,7 +1219,22 @@ class Chrome:
     
     self.focus = None
     self.address_bar = ""
-  
+
+  def copy(self):
+    if self.focus == "address bar":
+      import tkinter as tk
+      self.browser.window.clipboard_clear()
+      self.browser.window.clipboard_append(self.address_bar)
+
+  def paste(self):
+    if self.focus == "address bar":
+      import tkinter as tk
+      try:
+        clipboard_text = self.browser.window.clipboard_get()
+        self.address_bar += clipboard_text
+      except:
+        pass  # Clipboard empty or unavailable
+
   def tab_rect(self, i):
     tabs_start = self.newtab_rect.right + self.padding
     tab_width = self.font.measure("Tab X") + 2*self.padding
@@ -1558,7 +1573,9 @@ class Browser:
     self.window.bind("<Key>", self.handle_key)
     self.window.bind("<Return>", self.handle_enter)
     self.window.bind("<BackSpace>", self.handle_backspace)
-
+    self.window.bind("<Control-c>", self.handle_copy)
+    self.window.bind("<Control-v>", self.handle_paste)
+  
   def handle_middle_click(self, e):
     if e.y < self.chrome.bottom:
       pass
@@ -1568,6 +1585,13 @@ class Browser:
       if url:
         self.new_tab(url)
 
+  def handle_copy(self, e):
+    self.chrome.copy()
+
+  def handle_paste(self, e):
+    self.chrome.paste()
+    self.draw()
+  
   def handle_backspace(self, e):
     self.chrome.backspace()
     self.draw()
