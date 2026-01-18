@@ -1360,6 +1360,22 @@ class Tab:
     self.tab_height = tab_height
     self.history = []
 
+  def get_title(self):
+    # Find the <title> element in the document
+    title_nodes = [node for node in tree_to_list(self.nodes, [])
+                  if isinstance(node, Element) and node.tag == "title"]
+    
+    if not title_nodes:
+      return "Untitled"
+    
+    # Get text content from the title element
+    title_text = ""
+    for child in title_nodes[0].children:
+      if isinstance(child, Text):
+        title_text += child.text
+  
+    return title_text.strip() if title_text.strip() else "Untitled"
+
   def on_url_submit(self, event):
     url_text = self.url_entry.get()
     try:
@@ -1595,6 +1611,8 @@ class Browser:
     self.active_tab.draw(self.canvas, self.chrome.bottom)
     for cmd in self.chrome.paint():
       cmd.execute(0, self.canvas)
+    
+    self.window.title(self.active_tab.get_title())
   
   def new_tab(self, url):
       new_tab = Tab(Height - self.chrome.bottom)
