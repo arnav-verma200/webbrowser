@@ -1368,7 +1368,7 @@ class Tab:
     except:
       pass
 
-  def click(self, x, y):
+  def click(self, x, y, middle_click = False):
     y += self.scroll
     
     objs = [obj for obj in tree_to_list(self.document, [])
@@ -1383,7 +1383,10 @@ class Tab:
         pass
       elif elt.tag == "a" and "href" in elt.attributes:
         url = self.url.resolve(elt.attributes["href"])
-        return self.load(url)
+        if middle_click:
+          return url
+        else:
+          return self.load(url)
       elt = elt.parent
   
   def draw(self, canvas, offset):
@@ -1532,12 +1535,22 @@ class Browser:
     self.window.bind("<Up>", self.handle_up)
     self.window.bind("<MouseWheel>", self.handle_mousewheel)
     self.window.bind("<Button-1>", self.handle_click)
+    self.window.bind("<Button-2>", self.handle_middle_click)
     self.window.bind("<Configure>", self.handle_resize)
 
     self.chrome = Chrome(self)
     self.window.bind("<Key>", self.handle_key)
     self.window.bind("<Return>", self.handle_enter)
     self.window.bind("<BackSpace>", self.handle_backspace)
+
+  def handle_middle_click(self, e):
+    if e.y < self.chrome.bottom:
+      pass
+    else:
+      tab_y = e.y - self.chrome.bottom
+      url = self.active_tab.click(e.x, tab_y, middle_click=True)
+      if url:
+        self.new_tab(url)
 
   def handle_backspace(self, e):
     self.chrome.backspace()
