@@ -1244,10 +1244,19 @@ class Chrome:
 
   def tab_rect(self, i):
     tabs_start = self.newtab_rect.right + self.padding
-    tab_width = self.font.measure("Tab X") + 2*self.padding
+    tab_width = self.font.measure("Tab X ") + self.font.measure("X") + 4*self.padding
     return Rect(
       tabs_start + tab_width * i, self.tabbar_top,
       tabs_start + tab_width * (i + 1), self.tabbar_bottom)
+
+  def close_button_rect(self, i):
+    tab_bounds = self.tab_rect(i)
+    close_size = self.font.measure("X")
+    return Rect(
+      tab_bounds.right - close_size - 2*self.padding,
+      tab_bounds.top + self.padding,
+      tab_bounds.right - self.padding,
+      tab_bounds.bottom - self.padding)
 
   def paint(self):
     cmds = []
@@ -1279,8 +1288,21 @@ class Chrome:
       
       # Draw tab label
       cmds.append(DrawText(
-      bounds.left + self.padding, bounds.top + self.padding,
-      "Tab {}".format(i), self.font, "black"))
+        bounds.left + self.padding, bounds.top + self.padding,
+        "Tab {}".format(i), self.font, "black"))
+
+      # Draw vertical line before close button
+      close_rect = self.close_button_rect(i)
+      cmds.append(DrawLine(
+        close_rect.left - self.padding, bounds.top,
+        close_rect.left - self.padding, bounds.bottom,
+        "black", 1))
+      
+      # Draw close button (X)
+      close_rect = self.close_button_rect(i)
+      cmds.append(DrawText(
+        close_rect.left, close_rect.top,
+        "X", self.font, "black"))
     
     # Draw back button (replace existing code)
     can_go_back = self.browser.active_tab.history_index > 0
@@ -1361,19 +1383,24 @@ class Chrome:
       self.browser.new_tab(URL("https://browser.engineering/"))
     else:
       for i, tab in enumerate(self.browser.tabs):
-        if self.tab_rect(i).contains_point(x, y):
+        # Check close button first
+        if self.close_button_rect(i).contains_point(x, y):
+          self.browser.close_tab(tab)
+          return
+        
+        elif self.tab_rect(i).contains_point(x, y):
           self.browser.active_tab = tab
           break
-          
-        elif self.back_rect.contains_point(x, y):
-          self.browser.active_tab.go_back()
-
-        elif self.forward_rect.contains_point(x, y):
-          self.browser.active_tab.go_forward()
-        
-        elif self.address_rect.contains_point(x, y):
-          self.focus = "address bar"
-          self.address_bar = ""
+      
+      if self.back_rect.contains_point(x, y):
+        self.browser.active_tab.go_back()
+      
+      elif self.forward_rect.contains_point(x, y):
+        self.browser.active_tab.go_forward()
+      
+      elif self.address_rect.contains_point(x, y):
+        self.focus = "address bar"
+        self.address_bar = ""
 
 
 # Represents rectangular areas for layout calculations
@@ -1679,6 +1706,28 @@ class Browser:
       self.active_tab = new_tab
       self.tabs.append(new_tab)
       self.draw()
+  
+  def close_tab(self, tab):
+    # Find the index of the tab being closed
+    index = self.tabs.index(tab)
+    
+    # Remove the tab
+    self.tabs.remove(tab)
+    
+    # If this was the last tab, close the browser
+    if len(self.tabs) == 0:
+      self.window.destroy()
+      return
+    
+    # If we closed the active tab, switch to another tab
+    if tab == self.active_tab:
+      # Switch to the tab before it, or the first tab if it was the first tab
+      if index > 0:
+        self.active_tab = self.tabs[index - 1]
+      else:
+        self.active_tab = self.tabs[0]
+    
+    self.draw()
 
 
 if __name__ == "__main__":
