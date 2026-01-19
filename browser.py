@@ -46,6 +46,9 @@ class URL:
       
       self.host, url = url.split("/",1)
       self.path = "/" + url
+      self.fragment = None
+      if "#" in self.path:
+          self.path, self.fragment = self.path.split("#", 1)
       
       #saving port for http or https because both have diff ports 
       if self.scheme == "http":
@@ -1465,6 +1468,21 @@ class Tab:
       if isinstance(elt, Text):
         pass
       elif elt.tag == "a" and "href" in elt.attributes:
+        href = elt.attributes["href"]
+        if href.startswith("#"):
+            # Find the element with that id
+            elt_id = href[1:]
+            target_elt = [node for node in tree_to_list(self.nodes, [])
+                          if isinstance(node, Element)
+                          and node.attributes.get("id") == elt_id]
+            if target_elt:
+                # Find the layout object for the element
+                obj = [obj for obj in tree_to_list(self.document, [])
+                       if obj.node == target_elt[0]]
+                if obj:
+                    self.scroll = obj[0].y
+            return
+        
         url = self.url.resolve(elt.attributes["href"])
         if middle_click:
           return url
@@ -1600,11 +1618,23 @@ class Tab:
       self.document = DocumentLayout(self.nodes)
       self.document.layout()
 
+      if url.fragment:
+        elt = [node for node in tree_to_list(self.nodes, [])
+               if isinstance(node, Element)
+               and node.attributes.get("id") == url.fragment]
+        if elt:
+            # Find the layout object for the element
+            obj = [obj for obj in tree_to_list(self.document, [])
+                   if obj.node == elt[0]]
+            if obj:
+                self.scroll = obj[0].y
+
       # layout → display list
       self.display_list = []
       paint_tree(self.document, self.display_list)
-
-      self.scroll = 0
+      
+      if not url.fragment:
+          self.scroll = 0
 
 
 # Main browser application managing tabs and UI
