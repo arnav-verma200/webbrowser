@@ -1211,8 +1211,15 @@ class Chrome:
         self.padding + back_width,
         self.urlbar_bottom - self.padding)
 
-    self.address_rect = Rect(
+    forward_width = self.font.measure(">") + 2*self.padding
+    self.forward_rect = Rect(
         self.back_rect.right + self.padding,
+        self.urlbar_top + self.padding,
+        self.back_rect.right + self.padding + forward_width,
+        self.urlbar_bottom - self.padding)
+
+    self.address_rect = Rect(
+        self.forward_rect.right + self.padding,
         self.urlbar_top + self.padding,
         Width - self.padding,
         self.urlbar_bottom - self.padding)
@@ -1275,13 +1282,27 @@ class Chrome:
       bounds.left + self.padding, bounds.top + self.padding,
       "Tab {}".format(i), self.font, "black"))
     
-    # Draw back button
+    # Draw back button (replace existing code)
+    can_go_back = self.browser.active_tab.history_index > 0
+    back_color = "black" if can_go_back else "gray"
+
     cmds.append(DrawOutline(self.back_rect, "black", 1))
     cmds.append(DrawText(
           self.back_rect.left + self.padding,
           self.back_rect.top,
-          "<", self.font, "black"))
-        
+          "<", self.font, back_color))
+    
+    # Draw forward button
+    can_go_forward = (self.browser.active_tab.history_index < 
+                      len(self.browser.active_tab.history) - 1)
+    forward_color = "black" if can_go_forward else "gray"
+
+    cmds.append(DrawOutline(self.forward_rect, "black", 1))
+    cmds.append(DrawText(
+          self.forward_rect.left + self.padding,
+          self.forward_rect.top,
+          ">", self.font, forward_color))
+    
     # Draw the "+" button
     cmds.append(DrawOutline(self.newtab_rect, "black", 1))
     cmds.append(DrawText(
@@ -1346,6 +1367,9 @@ class Chrome:
           
         elif self.back_rect.contains_point(x, y):
           self.browser.active_tab.go_back()
+
+        elif self.forward_rect.contains_point(x, y):
+          self.browser.active_tab.go_forward()
         
         elif self.address_rect.contains_point(x, y):
           self.focus = "address bar"
@@ -1374,6 +1398,7 @@ class Tab:
     self.url = None
     self.tab_height = tab_height
     self.history = []
+    self.history_index = -1
 
   def get_title(self):
     # Find the <title> element in the document
@@ -1496,16 +1521,26 @@ class Tab:
       paint_tree(self.document, self.display_list)
 
   def go_back(self):
-    if len(self.history) > 1:
-      self.history.pop()
-      back = self.history.pop()
-      self.load(back)
+    if self.history_index > 0:
+      self.history_index -= 1
+      self.load(self.history[self.history_index], from_history=True)
 
-  def load(self, url):
-      self.history.append(url)
+  def go_forward(self):
+    if self.history_index < len(self.history) - 1:
+      self.history_index += 1
+      self.load(self.history[self.history_index], from_history=True)
+
+  def load(self, url, from_history=False):
+      if not from_history:
+        # Remove forward history when navigating normally
+        self.history = self.history[:self.history_index + 1]
+        self.history.append(url)
+        self.history_index = len(self.history) - 1
+      
       self.url = url
+      
       body = url.request()
-
+      
       if getattr(url, "view_source", False):
         print(body)
         return
