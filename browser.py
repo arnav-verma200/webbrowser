@@ -6,6 +6,7 @@ import time
 import tkinter.font
 CACHE = {}
 FONTS = {}
+VISITED_URLS = set()
 Height, Width = 600,800
 HSTEP, VSTEP = 8, 18
 SELF_CLOSING_TAGS = ["area", "base", "br", "col", "embed", "hr", "img", "input",
@@ -292,7 +293,7 @@ INHERITED_PROPERTIES = {
 }
 
 
-def style(node, rules):
+def style(node, rules, url):
     node.style = {}
 
     # 1. INHERIT FROM PARENT (or defaults)
@@ -349,9 +350,13 @@ def style(node, rules):
             parent_px = int(INHERITED_PROPERTIES["font-size"][:-2])
         node.style["font-size"] = str(int(parent_px * pct)) + "px"
 
+    if isinstance(node, Element) and node.tag == "a" and "href" in node.attributes:
+        if str(url.resolve(node.attributes["href"])) in VISITED_URLS:
+            node.style["color"] = "purple"
     # 5. RECURSE
     for child in node.children:
-        style(child, rules)
+        style(child, rules, url)
+
 
 
 def tree_to_list(tree, list):
@@ -1583,6 +1588,7 @@ class Tab:
         self.history_index = len(self.history) - 1
       
       self.url = url
+      VISITED_URLS.add(str(url))
       
       body = url.request()
       
@@ -1612,7 +1618,7 @@ class Tab:
         rules.extend(CSSParser(body).parse())
 
       # APPLY CSS STYLES (including inline styles)
-      style(self.nodes, rules)
+      style(self.nodes, rules, url)
 
       # DOM → layout tree
       self.document = DocumentLayout(self.nodes)
