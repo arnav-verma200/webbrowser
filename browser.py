@@ -12,18 +12,7 @@ HSTEP, VSTEP = 8, 18
 SELF_CLOSING_TAGS = ["area", "base", "br", "col", "embed", "hr", "img", "input",
                       "link", "meta", "param", "source", "track", "wbr"]
 LINE_SPACING_MULTIPLIER = 1.25  # Extra spacing between lines
-BOOKMARKS = set()
-BOOKMARKS_FILE = "bookmarks.txt"
-if os.path.exists(BOOKMARKS_FILE):
-    with open(BOOKMARKS_FILE, "r") as f:
-        BOOKMARKS = set(line.strip() for line in f if line.strip())
-else:
-    BOOKMARKS = set()
 
-def save_bookmarks():
-    with open(BOOKMARKS_FILE, "w") as f:
-        for bookmark in sorted(BOOKMARKS):
-            f.write(bookmark + "\n")
 
 # Handles URL parsing, scheme detection, and HTTP/HTTPS requests with caching
 class URL:
@@ -104,15 +93,11 @@ class URL:
   def request(self, redirect_count=0):
     if self.scheme == "about" or self.scheme == "bookmarks":
       if self.path == "bookmarks" or self.scheme == "bookmarks":
-        # Generate bookmarks page
-        html = "<html><body><h1>Bookmarks</h1><ul>"
-        for bookmark in sorted(BOOKMARKS):
-          html += f'<li><a href="{bookmark}">{bookmark}</a></li>'
-        html += "</ul></body></html>"
-        return html
+        return BOOKMARK_MANAGER.generate_page_html()
       elif self.path == "":
         return ""
       return ""
+    
     
     #A cache key is like a unique label or address for a specific piece of temporary stored data
     if self.scheme == "file":
@@ -1191,6 +1176,76 @@ class DocumentLayout:
     self.height = child.height
 
 
+class BookmarkManager:
+    def __init__(self, filename="bookmarks.txt"):
+        self.filename = filename
+        self.bookmarks = set()
+        self.load()
+    
+    def load(self):
+        """Load bookmarks from file"""
+        if os.path.exists(self.filename):
+            try:
+                with open(self.filename, "r", encoding="utf-8") as f:
+                    self.bookmarks = set(line.strip() for line in f if line.strip())
+            except Exception as e:
+                print(f"Error loading bookmarks: {e}")
+                self.bookmarks = set()
+    
+    def save(self):
+        """Save bookmarks to file"""
+        try:
+            with open(self.filename, "w", encoding="utf-8") as f:
+                for bookmark in sorted(self.bookmarks):
+                    f.write(bookmark + "\n")
+        except Exception as e:
+            print(f"Error saving bookmarks: {e}")
+    
+    def add(self, url):
+        """Add a bookmark"""
+        self.bookmarks.add(url)
+        self.save()
+    
+    def remove(self, url):
+        """Remove a bookmark"""
+        if url in self.bookmarks:
+            self.bookmarks.discard(url)
+            self.save()
+    
+    def toggle(self, url):
+        """Toggle bookmark status"""
+        if url in self.bookmarks:
+            self.remove(url)
+        else:
+            self.add(url)
+    
+    def contains(self, url):
+        """Check if URL is bookmarked"""
+        return url in self.bookmarks
+    
+    def generate_page_html(self):
+        """Generate HTML for bookmarks page"""
+        html = """
+<!DOCTYPE html>
+<html>
+<head><title>Bookmarks</title></head>
+<body>
+<h1>Bookmarks</h1>
+"""
+        if not self.bookmarks:
+            html += "<p>No bookmarks yet. Click the ★ button to bookmark a page.</p>"
+        else:
+            html += "<ul>"
+            for bookmark in sorted(self.bookmarks):
+                html += f'<li><a href="{bookmark}">{bookmark}</a></li>'
+            html += "</ul>"
+        
+        html += "</body></html>"
+        return html
+# Create global bookmark manager
+BOOKMARK_MANAGER = BookmarkManager()
+
+
 try:
 # Load default stylesheet
   DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
@@ -1382,27 +1437,30 @@ class Chrome:
 
     cmds.append(DrawOutline(self.forward_rect, "black", 1))
     cmds.append(DrawText(
-          self.forward_rect.left + self.padding,
-          self.forward_rect.top,
-          ">", self.font, forward_color))
-
-    # Draw bookmark button
+      self.forward_rect.left + self.padding,
+      self.forward_rect.top,
+      ">", self.font, forward_color))
+    
+    # Draw bookmark button (optimized)
     current_url = str(self.browser.active_tab.url)
-    is_bookmarked = current_url in BOOKMARKS
-    bookmark_color = "gold" if is_bookmarked else "white"
+    is_bookmarked = BOOKMARK_MANAGER.contains(current_url)
+    show_bookmark = self.browser.active_tab.url.scheme in ["http", "https"]
 
-    # Draw filled background for bookmark button
-    cmds.append(DrawRect(
-        self.bookmark_rect.left, self.bookmark_rect.top,
-        self.bookmark_rect.right, self.bookmark_rect.bottom,
-        bookmark_color))
-
-    cmds.append(DrawOutline(self.bookmark_rect, "black", 1))
-    cmds.append(DrawText(
+    if show_bookmark:
+      bookmark_color = "gold" if is_bookmarked else "white"
+        
+        # Draw filled background for bookmark button
+      cmds.append(DrawRect(
+          self.bookmark_rect.left, self.bookmark_rect.top,
+          self.bookmark_rect.right, self.bookmark_rect.bottom,
+          bookmark_color))
+        
+      cmds.append(DrawOutline(self.bookmark_rect, "black", 1))
+      cmds.append(DrawText(
           self.bookmark_rect.left + self.padding,
           self.bookmark_rect.top,
           "★", self.font, "black"))
-    
+
     # Draw the "+" button
     cmds.append(DrawOutline(self.newtab_rect, "black", 1))
     cmds.append(DrawText(
@@ -1465,34 +1523,37 @@ class Chrome:
       self.cursor_position = 0
 
   def click(self, x, y):
-    self.focus = None
-    
-    if self.newtab_rect.contains_point(x, y):
-      self.browser.new_tab(URL("https://browser.engineering/"))
-    else:
-      for i, tab in enumerate(self.browser.tabs):
-        # Check close button first
-        if self.close_button_rect(i).contains_point(x, y):
-          self.browser.close_tab(tab)
-          return
-        
-        elif self.tab_rect(i).contains_point(x, y):
-          self.browser.active_tab = tab
-          break
+      self.focus = None
       
-      if self.back_rect.contains_point(x, y):
-        self.browser.active_tab.go_back()
+      if self.newtab_rect.contains_point(x, y):
+        self.browser.new_tab(URL("https://browser.engineering/"))
+      else:
+        for i, tab in enumerate(self.browser.tabs):
+          # Check close button first
+          if self.close_button_rect(i).contains_point(x, y):
+            self.browser.close_tab(tab)
+            return
+          
+          elif self.tab_rect(i).contains_point(x, y):
+            self.browser.active_tab = tab
+            self.browser.draw()  # Redraw to update bookmark button
+            return
+        
+        if self.back_rect.contains_point(x, y):
+          self.browser.active_tab.go_back()
 
-      elif self.forward_rect.contains_point(x, y):
-        self.browser.active_tab.go_forward()
+        elif self.forward_rect.contains_point(x, y):
+          self.browser.active_tab.go_forward()
 
-      elif self.bookmark_rect.contains_point(x, y):
-        self.toggle_bookmark()
+        elif self.bookmark_rect.contains_point(x, y):
+          # Only toggle if it's a bookmarkable URL
+          if self.browser.active_tab.url.scheme in ["http", "https"]:
+              self.toggle_bookmark()
 
-      elif self.address_rect.contains_point(x, y):
-        self.focus = "address bar"
-        self.address_bar = ""
-        self.cursor_position = 0
+        elif self.address_rect.contains_point(x, y):
+          self.focus = "address bar"
+          self.address_bar = ""
+          self.cursor_position = 0
 
   def move_cursor_left(self):
     if self.focus == "address bar":
@@ -1506,11 +1567,10 @@ class Chrome:
 
   def toggle_bookmark(self):
     current_url = str(self.browser.active_tab.url)
-    if current_url in BOOKMARKS:
-      BOOKMARKS.remove(current_url)
-    else:
-      BOOKMARKS.add(current_url)
-    save_bookmarks()
+    # Only allow bookmarking http/https URLs
+    if self.browser.active_tab.url.scheme in ["http", "https"]:
+        BOOKMARK_MANAGER.toggle(current_url)
+
 
 # Represents rectangular areas for layout calculations
 class Rect:
