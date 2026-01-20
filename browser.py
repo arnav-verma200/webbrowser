@@ -1234,6 +1234,7 @@ class Chrome:
     
     self.focus = None
     self.address_bar = ""
+    self.cursor_position = 0
 
   def copy(self):
     if self.focus == "address bar":
@@ -1246,7 +1247,11 @@ class Chrome:
       import tkinter as tk
       try:
         clipboard_text = self.browser.window.clipboard_get()
-        self.address_bar += clipboard_text
+        # Insert at cursor position
+        self.address_bar = (self.address_bar[:self.cursor_position] + 
+                          clipboard_text + 
+                          self.address_bar[self.cursor_position:])
+        self.cursor_position += len(clipboard_text)
       except:
         pass  # Clipboard empty or unavailable
 
@@ -1348,7 +1353,8 @@ class Chrome:
                 self.address_rect.top,
                 self.address_bar, self.font, "black"))
       
-      w = self.font.measure(self.address_bar)
+      # Draw cursor at cursor_position instead of at the end
+      w = self.font.measure(self.address_bar[:self.cursor_position])
       cmds.append(DrawLine(
                 self.address_rect.left + self.padding + w,
                 self.address_rect.top,
@@ -1373,16 +1379,25 @@ class Chrome:
 
   def keypress(self, char):
     if self.focus == "address bar":
-      self.address_bar += char
+      # Insert character at cursor position
+      self.address_bar = (self.address_bar[:self.cursor_position] + 
+                        char + 
+                        self.address_bar[self.cursor_position:])
+      self.cursor_position += 1
 
   def backspace(self):
     if self.focus == "address bar":
-      self.address_bar = self.address_bar[:-1]
+      if self.cursor_position > 0:
+        # Delete character before cursor
+        self.address_bar = (self.address_bar[:self.cursor_position - 1] + 
+                          self.address_bar[self.cursor_position:])
+        self.cursor_position -= 1
 
   def enter(self):
     if self.focus == "address bar":
       self.browser.active_tab.load(URL(self.address_bar))
       self.focus = None
+      self.cursor_position = 0
 
   def click(self, x, y):
     self.focus = None
@@ -1409,6 +1424,17 @@ class Chrome:
       elif self.address_rect.contains_point(x, y):
         self.focus = "address bar"
         self.address_bar = ""
+        self.cursor_position = 0
+
+  def move_cursor_left(self):
+    if self.focus == "address bar":
+      if self.cursor_position > 0:
+        self.cursor_position -= 1
+
+  def move_cursor_right(self):
+    if self.focus == "address bar":
+      if self.cursor_position < len(self.address_bar):
+        self.cursor_position += 1
 
 
 # Represents rectangular areas for layout calculations
@@ -1673,7 +1699,18 @@ class Browser:
     self.window.bind("<BackSpace>", self.handle_backspace)
     self.window.bind("<Control-c>", self.handle_copy)
     self.window.bind("<Control-v>", self.handle_paste)
+    self.window.bind("<Left>", self.handle_left)
+    self.window.bind("<Right>", self.handle_right)
   
+  
+  def handle_left(self, e):
+    self.chrome.move_cursor_left()
+    self.draw()
+
+  def handle_right(self, e):
+    self.chrome.move_cursor_right()
+    self.draw()
+
   def handle_middle_click(self, e):
     if e.y < self.chrome.bottom:
       pass
