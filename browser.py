@@ -16,7 +16,10 @@ LINE_SPACING_MULTIPLIER = 1.25  # Extra spacing between lines
 
 # Handles URL parsing, scheme detection, and HTTP/HTTPS requests with caching
 class URL:
+  
   def __init__(self, url):
+    self.fragment = None
+    
     # Add this new check FIRST
     if url.startswith("about:"):
       self.scheme = "about"
@@ -37,12 +40,12 @@ class URL:
     
     try:
     #cutting url into host, scheme and path
-        self.scheme, url = url.split("://", 1)
+      self.scheme, url = url.split("://", 1)
     except ValueError:
-        # Malformed URL → behave like about:blank
-        self.scheme = "about"
-        self.path = ""
-        return
+      # Malformed URL → behave like about:blank
+      self.scheme = "about"
+      self.path = ""
+      return
     
     # Unknown scheme → treat as about:blank
     if self.scheme not in ["http", "https", "file"]:
@@ -56,16 +59,17 @@ class URL:
       
       self.host, url = url.split("/",1)
       self.path = "/" + url
-      self.fragment = None
+      
+      # Fragment is already initialized above, now parse it
       if "#" in self.path:
-          self.path, self.fragment = self.path.split("#", 1)
+        self.path, self.fragment = self.path.split("#", 1)
       
       #saving port for http or https because both have diff ports 
       if self.scheme == "http":
         self.port = 80
       elif self.scheme == "https":
         self.port = 443
-        
+      
       if ":" in self.host:
         self.host, port = self.host.split(":", 1)
         self.port = int(port)
@@ -76,7 +80,7 @@ class URL:
       if os.name == "nt" and url.startswith("/"):
         url = url[1:]   # remove leading '/'
       self.path = os.path.normpath(url)
-
+    
   def __str__(self):
     if self.scheme == "about":
       return f"about:{self.path}"
@@ -1309,36 +1313,45 @@ class Chrome:
     
     back_width = self.font.measure("<") + 2*self.padding
     self.back_rect = Rect(
-        self.padding,
-        self.urlbar_top + self.padding,
-        self.padding + back_width,
-        self.urlbar_bottom - self.padding)
+      self.padding,
+      self.urlbar_top + self.padding,
+      self.padding + back_width,
+      self.urlbar_bottom - self.padding)
     
     forward_width = self.font.measure(">") + 2*self.padding
     self.forward_rect = Rect(
-        self.back_rect.right + self.padding,
-        self.urlbar_top + self.padding,
-        self.back_rect.right + self.padding + forward_width,
-        self.urlbar_bottom - self.padding)
+      self.back_rect.right + self.padding,
+      self.urlbar_top + self.padding,
+      self.back_rect.right + self.padding + forward_width,
+      self.urlbar_bottom - self.padding)
 
-    # Add bookmark button
+    # Bookmark toggle button (star)
     bookmark_width = self.font.measure("★") + 2*self.padding
     self.bookmark_rect = Rect(
-        self.forward_rect.right + self.padding,
-        self.urlbar_top + self.padding,
-        self.forward_rect.right + self.padding + bookmark_width,
-        self.urlbar_bottom - self.padding)
+      self.forward_rect.right + self.padding,
+      self.urlbar_top + self.padding,
+      self.forward_rect.right + self.padding + bookmark_width,
+      self.urlbar_bottom - self.padding)
 
+    # ADD THIS: Bookmarks list button (folder icon)
+    bookmarks_list_width = self.font.measure("☰") + 2*self.padding
+    self.bookmarks_list_rect = Rect(
+      self.bookmark_rect.right + self.padding,
+      self.urlbar_top + self.padding,
+      self.bookmark_rect.right + self.padding + bookmarks_list_width,
+      self.urlbar_bottom - self.padding)
+
+    # Update address bar to start after bookmarks list button
     self.address_rect = Rect(
-        self.bookmark_rect.right + self.padding,  # Changed from self.forward_rect.right
-        self.urlbar_top + self.padding,
-        Width - self.padding,
-        self.urlbar_bottom - self.padding)
+      self.bookmarks_list_rect.right + self.padding,
+      self.urlbar_top + self.padding,
+      Width - self.padding,
+      self.urlbar_bottom - self.padding)
     
     self.focus = None
     self.address_bar = ""
     self.cursor_position = 0
-
+  
   def copy(self):
     if self.focus == "address bar":
       import tkinter as tk
@@ -1449,7 +1462,6 @@ class Chrome:
     if show_bookmark:
       bookmark_color = "gold" if is_bookmarked else "white"
         
-        # Draw filled background for bookmark button
       cmds.append(DrawRect(
           self.bookmark_rect.left, self.bookmark_rect.top,
           self.bookmark_rect.right, self.bookmark_rect.bottom,
@@ -1461,6 +1473,13 @@ class Chrome:
           self.bookmark_rect.top,
           "★", self.font, "black"))
 
+    # Draw bookmarks list button
+    cmds.append(DrawOutline(self.bookmarks_list_rect, "black", 1))
+    cmds.append(DrawText(
+          self.bookmarks_list_rect.left + self.padding,
+          self.bookmarks_list_rect.top,
+          "☰", self.font, "black"))
+    
     # Draw the "+" button
     cmds.append(DrawOutline(self.newtab_rect, "black", 1))
     cmds.append(DrawText(
@@ -1536,7 +1555,7 @@ class Chrome:
           
           elif self.tab_rect(i).contains_point(x, y):
             self.browser.active_tab = tab
-            self.browser.draw()  # Redraw to update bookmark button
+            self.browser.draw()
             return
         
         if self.back_rect.contains_point(x, y):
@@ -1546,9 +1565,12 @@ class Chrome:
           self.browser.active_tab.go_forward()
 
         elif self.bookmark_rect.contains_point(x, y):
-          # Only toggle if it's a bookmarkable URL
           if self.browser.active_tab.url.scheme in ["http", "https"]:
               self.toggle_bookmark()
+        
+        # ADD THIS: Handle bookmarks list button click
+        elif self.bookmarks_list_rect.contains_point(x, y):
+          self.browser.active_tab.load(URL("about:bookmarks"))
 
         elif self.address_rect.contains_point(x, y):
           self.focus = "address bar"
