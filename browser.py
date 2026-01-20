@@ -1288,8 +1288,8 @@ class DrawLine:
 
 # Manages the browser's user interface chrome (tabs, address bar, buttons)
 class Chrome:
-  def __init__(self, browser):
-    self.browser = browser
+  def __init__(self, window):
+    self.window = window
     
     self.font = get_font(20, "normal", "roman")
     self.font_height = self.font.metrics("linespace")
@@ -1352,25 +1352,6 @@ class Chrome:
     self.address_bar = ""
     self.cursor_position = 0
   
-  def copy(self):
-    if self.focus == "address bar":
-      import tkinter as tk
-      self.browser.window.clipboard_clear()
-      self.browser.window.clipboard_append(self.address_bar)
-
-  def paste(self):
-    if self.focus == "address bar":
-      import tkinter as tk
-      try:
-        clipboard_text = self.browser.window.clipboard_get()
-        # Insert at cursor position
-        self.address_bar = (self.address_bar[:self.cursor_position] + 
-                          clipboard_text + 
-                          self.address_bar[self.cursor_position:])
-        self.cursor_position += len(clipboard_text)
-      except:
-        pass  # Clipboard empty or unavailable
-
   def tab_rect(self, i):
     tabs_start = self.newtab_rect.right + self.padding
     tab_width = self.font.measure("Tab X ") + self.font.measure("X") + 4*self.padding
@@ -1397,11 +1378,11 @@ class Chrome:
       "white"))
     
     # Draw all tabs
-    for i, tab in enumerate(self.browser.tabs):
+    for i, tab in enumerate(self.window.tabs):
       bounds = self.tab_rect(i)
       
       # Highlight active tab with light background
-      if tab == self.browser.active_tab:
+      if tab == self.window.active_tab:
         cmds.append(DrawRect(
           bounds.left, bounds.top,
           bounds.right, bounds.bottom,
@@ -1434,7 +1415,7 @@ class Chrome:
         "X", self.font, "black"))
     
     # Draw back button (replace existing code)
-    can_go_back = self.browser.active_tab.history_index > 0
+    can_go_back = self.window.active_tab.history_index > 0
     back_color = "black" if can_go_back else "gray"
 
     cmds.append(DrawOutline(self.back_rect, "black", 1))
@@ -1444,8 +1425,8 @@ class Chrome:
           "<", self.font, back_color))
     
     # Draw forward button
-    can_go_forward = (self.browser.active_tab.history_index < 
-                      len(self.browser.active_tab.history) - 1)
+    can_go_forward = (self.window.active_tab.history_index < 
+                      len(self.window.active_tab.history) - 1)
     forward_color = "black" if can_go_forward else "gray"
 
     cmds.append(DrawOutline(self.forward_rect, "black", 1))
@@ -1455,9 +1436,9 @@ class Chrome:
       ">", self.font, forward_color))
     
     # Draw bookmark button (optimized)
-    current_url = str(self.browser.active_tab.url)
+    current_url = str(self.window.active_tab.url)
     is_bookmarked = BOOKMARK_MANAGER.contains(current_url)
-    show_bookmark = self.browser.active_tab.url.scheme in ["http", "https"]
+    show_bookmark = self.window.active_tab.url.scheme in ["http", "https"]
 
     if show_bookmark:
       bookmark_color = "gold" if is_bookmarked else "white"
@@ -1505,7 +1486,7 @@ class Chrome:
                 "red", 1))
       
     else:
-      url = str(self.browser.active_tab.url)
+      url = str(self.window.active_tab.url)
       cmds.append(DrawText(
                 self.address_rect.left + self.padding,
                 self.address_rect.top,
@@ -1535,48 +1516,6 @@ class Chrome:
                           self.address_bar[self.cursor_position:])
         self.cursor_position -= 1
 
-  def enter(self):
-    if self.focus == "address bar":
-      self.browser.active_tab.load(URL(self.address_bar))
-      self.focus = None
-      self.cursor_position = 0
-
-  def click(self, x, y):
-      self.focus = None
-      
-      if self.newtab_rect.contains_point(x, y):
-        self.browser.new_tab(URL("https://browser.engineering/"))
-      else:
-        for i, tab in enumerate(self.browser.tabs):
-          # Check close button first
-          if self.close_button_rect(i).contains_point(x, y):
-            self.browser.close_tab(tab)
-            return
-          
-          elif self.tab_rect(i).contains_point(x, y):
-            self.browser.active_tab = tab
-            self.browser.draw()
-            return
-        
-        if self.back_rect.contains_point(x, y):
-          self.browser.active_tab.go_back()
-
-        elif self.forward_rect.contains_point(x, y):
-          self.browser.active_tab.go_forward()
-
-        elif self.bookmark_rect.contains_point(x, y):
-          if self.browser.active_tab.url.scheme in ["http", "https"]:
-              self.toggle_bookmark()
-        
-        # ADD THIS: Handle bookmarks list button click
-        elif self.bookmarks_list_rect.contains_point(x, y):
-          self.browser.active_tab.load(URL("about:bookmarks"))
-
-        elif self.address_rect.contains_point(x, y):
-          self.focus = "address bar"
-          self.address_bar = ""
-          self.cursor_position = 0
-
   def move_cursor_left(self):
     if self.focus == "address bar":
       if self.cursor_position > 0:
@@ -1587,12 +1526,68 @@ class Chrome:
       if self.cursor_position < len(self.address_bar):
         self.cursor_position += 1
 
-  def toggle_bookmark(self):
-    current_url = str(self.browser.active_tab.url)
-    # Only allow bookmarking http/https URLs
-    if self.browser.active_tab.url.scheme in ["http", "https"]:
-        BOOKMARK_MANAGER.toggle(current_url)
+  def click(self, x, y):
+    self.focus = None
+    
+    if self.newtab_rect.contains_point(x, y):
+      self.window.new_tab(URL("https://browser.engineering/"))
+    else:
+      for i, tab in enumerate(self.window.tabs):
+        if self.close_button_rect(i).contains_point(x, y):
+          self.window.close_tab(tab)
+          return
+        
+        elif self.tab_rect(i).contains_point(x, y):
+          self.window.active_tab = tab
+          self.window.draw()
+          return
+      
+      if self.back_rect.contains_point(x, y):
+        self.window.active_tab.go_back()
 
+      elif self.forward_rect.contains_point(x, y):
+        self.window.active_tab.go_forward()
+
+      elif self.bookmark_rect.contains_point(x, y):
+        if self.window.active_tab.url.scheme in ["http", "https"]:
+          self.toggle_bookmark()
+      
+      elif self.bookmarks_list_rect.contains_point(x, y):
+        self.window.active_tab.load(URL("about:bookmarks"))
+
+      elif self.address_rect.contains_point(x, y):
+        self.focus = "address bar"
+        self.address_bar = ""
+        self.cursor_position = 0
+
+  def enter(self):
+    if self.focus == "address bar":
+      self.window.active_tab.load(URL(self.address_bar))
+      self.focus = None
+      self.cursor_position = 0
+
+  def toggle_bookmark(self):
+    current_url = str(self.window.active_tab.url)
+    if self.window.active_tab.url.scheme in ["http", "https"]:
+      BOOKMARK_MANAGER.toggle(current_url)
+
+  def copy(self):
+    if self.focus == "address bar":
+      import tkinter as tk
+      self.window.window.clipboard_clear()
+      self.window.window.clipboard_append(self.address_bar)
+
+  def paste(self):
+    if self.focus == "address bar":
+      import tkinter as tk
+      try:
+        clipboard_text = self.window.window.clipboard_get()
+        self.address_bar = (self.address_bar[:self.cursor_position] + 
+                          clipboard_text + 
+                          self.address_bar[self.cursor_position:])
+        self.cursor_position += len(clipboard_text)
+      except:
+        pass
 
 # Represents rectangular areas for layout calculations
 class Rect:
@@ -1829,9 +1824,9 @@ class Tab:
           self.scroll = 0
 
 
-# Main browser application managing tabs and UI
-class Browser:
-  def __init__(self):
+class BrowserWindow:
+  def __init__(self, browser, initial_url=None):
+    self.browser = browser
     self.tabs = []
     self.active_tab = None
     
@@ -1852,8 +1847,6 @@ class Browser:
     self.window.bind("<Button-1>", self.handle_click)
     self.window.bind("<Button-2>", self.handle_middle_click)
     self.window.bind("<Configure>", self.handle_resize)
-
-    self.chrome = Chrome(self)
     self.window.bind("<Key>", self.handle_key)
     self.window.bind("<Return>", self.handle_enter)
     self.window.bind("<BackSpace>", self.handle_backspace)
@@ -1861,7 +1854,31 @@ class Browser:
     self.window.bind("<Control-v>", self.handle_paste)
     self.window.bind("<Left>", self.handle_left)
     self.window.bind("<Right>", self.handle_right)
+    self.window.bind("<Control-n>", self.handle_new_window)
+    self.window.bind("<Control-t>", self.handle_new_tab)
+    self.window.bind("<Control-w>", self.handle_close_tab)
+    
+    self.window.protocol("WM_DELETE_WINDOW", self.handle_window_close)
+    
+    self.chrome = Chrome(self)
+    
+    if initial_url:
+      self.new_tab(initial_url)
+    else:
+      self.new_tab(URL("https://browser.engineering/"))
   
+  def handle_new_window(self, e):
+    self.browser.new_window()
+  
+  def handle_new_tab(self, e):
+    self.new_tab(URL("https://browser.engineering/"))
+  
+  def handle_close_tab(self, e):
+    if self.active_tab:
+      self.close_tab(self.active_tab)
+  
+  def handle_window_close(self):
+    self.browser.close_window(self)
   
   def handle_left(self, e):
     self.chrome.move_cursor_left()
@@ -1902,33 +1919,40 @@ class Browser:
     self.draw()
   
   def handle_down(self, e):
-    self.active_tab.scrolldown()
-    self.draw()
+    if self.active_tab:
+      self.active_tab.scrolldown()
+      self.draw()
   
   def handle_up(self, e):
-    self.active_tab.scrollup()
-    self.draw()
+    if self.active_tab:
+      self.active_tab.scrollup()
+      self.draw()
   
   def handle_mousewheel(self, e):
-    self.active_tab.mousewheel(e)
-    self.draw()
+    if self.active_tab:
+      self.active_tab.mousewheel(e)
+      self.draw()
   
   def handle_click(self, e):
     if e.y < self.chrome.bottom:
       self.chrome.click(e.x, e.y)
     else:
-      tab_y = e.y - self.chrome.bottom
-      self.active_tab.click(e.x, tab_y)
+      if self.active_tab:
+        tab_y = e.y - self.chrome.bottom
+        self.active_tab.click(e.x, tab_y)
     
-    # Only draw if we still have tabs (window wasn't destroyed)
     if len(self.tabs) > 0:
       self.draw()
   
   def handle_resize(self, e):
-    self.active_tab.on_resize(e)
-    self.draw()
+    if self.active_tab:
+      self.active_tab.on_resize(e)
+      self.draw()
   
   def draw(self):
+    if not self.active_tab:
+      return
+    
     self.canvas.delete("all")
     self.active_tab.draw(self.canvas, self.chrome.bottom)
     for cmd in self.chrome.paint():
@@ -1937,36 +1961,54 @@ class Browser:
     self.window.title(self.active_tab.get_title())
   
   def new_tab(self, url):
-      new_tab = Tab(Height - self.chrome.bottom)
-      new_tab.load(url)
-      self.active_tab = new_tab
-      self.tabs.append(new_tab)
-      self.draw()
+    new_tab = Tab(Height - self.chrome.bottom)
+    new_tab.load(url)
+    self.active_tab = new_tab
+    self.tabs.append(new_tab)
+    self.draw()
   
   def close_tab(self, tab):
-    # Find the index of the tab being closed
     index = self.tabs.index(tab)
-    
-    # Remove the tab
     self.tabs.remove(tab)
     
-    # If this was the last tab, close the browser
     if len(self.tabs) == 0:
-      self.window.destroy()
-      return  # DON'T call draw() after this!
+      self.browser.close_window(self)
+      return
     
-    # If we closed the active tab, switch to another tab
     if tab == self.active_tab:
-      # Switch to the tab before it, or the first tab if it was the first tab
       if index > 0:
         self.active_tab = self.tabs[index - 1]
       else:
         self.active_tab = self.tabs[0]
+    
+    self.draw()
+
+
+class Browser:
+  def __init__(self):
+    self.windows = []
+  
+  def new_window(self, url=None):
+    window = BrowserWindow(self, url)
+    self.windows.append(window)
+    return window
+  
+  def close_window(self, window):
+    if window in self.windows:
+      self.windows.remove(window)
+      window.window.destroy()
+    
+    if len(self.windows) == 0:
+      import sys
+      sys.exit(0)
+
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 2:
-        print("Usage: python browser.py <URL>")
-        sys.exit(1)
-    Browser().new_tab(URL(sys.argv[1]))
-    tkinter.mainloop()
+  import sys
+  if len(sys.argv) < 2:
+    print("Usage: python browser.py <URL>")
+    sys.exit(1)
+  
+  browser = Browser()
+  browser.new_window(URL(sys.argv[1]))
+  tkinter.mainloop()
