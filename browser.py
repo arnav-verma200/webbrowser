@@ -12,12 +12,30 @@ HSTEP, VSTEP = 8, 18
 SELF_CLOSING_TAGS = ["area", "base", "br", "col", "embed", "hr", "img", "input",
                       "link", "meta", "param", "source", "track", "wbr"]
 LINE_SPACING_MULTIPLIER = 1.25  # Extra spacing between lines
+BOOKMARKS = set()
+BOOKMARKS_FILE = "bookmarks.txt"
+if os.path.exists(BOOKMARKS_FILE):
+    with open(BOOKMARKS_FILE, "r") as f:
+        BOOKMARKS = set(line.strip() for line in f if line.strip())
+else:
+    BOOKMARKS = set()
+
+def save_bookmarks():
+    with open(BOOKMARKS_FILE, "w") as f:
+        for bookmark in sorted(BOOKMARKS):
+            f.write(bookmark + "\n")
 
 # Handles URL parsing, scheme detection, and HTTP/HTTPS requests with caching
 class URL:
   def __init__(self, url):
-    if url == "about:blank":
+    # Add this new check FIRST
+    if url.startswith("about:"):
       self.scheme = "about"
+      self.path = url[6:]  # Remove "about:" prefix
+      return
+
+    if url == "bookmarks":
+      self.scheme = "bookmarks"
       self.path = ""
       return
     
@@ -25,6 +43,8 @@ class URL:
     if url.startswith("view-source:"):
       self.view_source = True
       url = url[len("view-source:"):]
+    
+    # ... rest stays the same
     
     try:
     #cutting url into host, scheme and path
@@ -69,6 +89,11 @@ class URL:
       self.path = os.path.normpath(url)
 
   def __str__(self):
+    if self.scheme == "about":
+      return f"about:{self.path}"
+    elif self.scheme == "bookmarks":
+      return "bookmarks"
+    
     port_part = ":" + str(self.port)
     if self.scheme == "https" and self.port == 443:
         port_part = ""
@@ -77,7 +102,16 @@ class URL:
     return self.scheme + "://" + self.host + port_part + self.path
 
   def request(self, redirect_count=0):
-    if self.scheme == "about":
+    if self.scheme == "about" or self.scheme == "bookmarks":
+      if self.path == "bookmarks" or self.scheme == "bookmarks":
+        # Generate bookmarks page
+        html = "<html><body><h1>Bookmarks</h1><ul>"
+        for bookmark in sorted(BOOKMARKS):
+          html += f'<li><a href="{bookmark}">{bookmark}</a></li>'
+        html += "</ul></body></html>"
+        return html
+      elif self.path == "":
+        return ""
       return ""
     
     #A cache key is like a unique label or address for a specific piece of temporary stored data
@@ -208,10 +242,16 @@ class URL:
     return content
   
   def resolve(self, url):
+    # Don't resolve relative URLs for special schemes
+    if self.scheme in ["about", "bookmarks"]:
+      if "://" in url:
+        return URL(url)
+      return self  # Can't resolve relative URLs for special schemes
+    
     # Absolute URL
     if "://" in url:
         return URL(url)
-
+  
     # Scheme-relative URL
     if url.startswith("//"):
         return URL(self.scheme + ":" + url)
@@ -1218,7 +1258,7 @@ class Chrome:
         self.urlbar_top + self.padding,
         self.padding + back_width,
         self.urlbar_bottom - self.padding)
-
+    
     forward_width = self.font.measure(">") + 2*self.padding
     self.forward_rect = Rect(
         self.back_rect.right + self.padding,
@@ -1226,8 +1266,16 @@ class Chrome:
         self.back_rect.right + self.padding + forward_width,
         self.urlbar_bottom - self.padding)
 
-    self.address_rect = Rect(
+    # Add bookmark button
+    bookmark_width = self.font.measure("★") + 2*self.padding
+    self.bookmark_rect = Rect(
         self.forward_rect.right + self.padding,
+        self.urlbar_top + self.padding,
+        self.forward_rect.right + self.padding + bookmark_width,
+        self.urlbar_bottom - self.padding)
+
+    self.address_rect = Rect(
+        self.bookmark_rect.right + self.padding,  # Changed from self.forward_rect.right
         self.urlbar_top + self.padding,
         Width - self.padding,
         self.urlbar_bottom - self.padding)
@@ -1337,6 +1385,23 @@ class Chrome:
           self.forward_rect.left + self.padding,
           self.forward_rect.top,
           ">", self.font, forward_color))
+
+    # Draw bookmark button
+    current_url = str(self.browser.active_tab.url)
+    is_bookmarked = current_url in BOOKMARKS
+    bookmark_color = "gold" if is_bookmarked else "white"
+
+    # Draw filled background for bookmark button
+    cmds.append(DrawRect(
+        self.bookmark_rect.left, self.bookmark_rect.top,
+        self.bookmark_rect.right, self.bookmark_rect.bottom,
+        bookmark_color))
+
+    cmds.append(DrawOutline(self.bookmark_rect, "black", 1))
+    cmds.append(DrawText(
+          self.bookmark_rect.left + self.padding,
+          self.bookmark_rect.top,
+          "★", self.font, "black"))
     
     # Draw the "+" button
     cmds.append(DrawOutline(self.newtab_rect, "black", 1))
@@ -1417,10 +1482,13 @@ class Chrome:
       
       if self.back_rect.contains_point(x, y):
         self.browser.active_tab.go_back()
-      
+
       elif self.forward_rect.contains_point(x, y):
         self.browser.active_tab.go_forward()
-      
+
+      elif self.bookmark_rect.contains_point(x, y):
+        self.toggle_bookmark()
+
       elif self.address_rect.contains_point(x, y):
         self.focus = "address bar"
         self.address_bar = ""
@@ -1436,6 +1504,13 @@ class Chrome:
       if self.cursor_position < len(self.address_bar):
         self.cursor_position += 1
 
+  def toggle_bookmark(self):
+    current_url = str(self.browser.active_tab.url)
+    if current_url in BOOKMARKS:
+      BOOKMARKS.remove(current_url)
+    else:
+      BOOKMARKS.add(current_url)
+    save_bookmarks()
 
 # Represents rectangular areas for layout calculations
 class Rect:
@@ -1509,7 +1584,7 @@ class Tab:
             if target_elt:
                 # Find the layout object for the element
                 obj = [obj for obj in tree_to_list(self.document, [])
-                       if obj.node == target_elt[0]]
+                      if obj.node == target_elt[0]]
                 if obj:
                     self.scroll = obj[0].y
             return
@@ -1614,7 +1689,10 @@ class Tab:
         self.history_index = len(self.history) - 1
       
       self.url = url
-      VISITED_URLS.add(str(url))
+      
+      # Only track normal URLs, not special schemes
+      if url.scheme in ["http", "https"]:
+        VISITED_URLS.add(str(url))
       
       body = url.request()
       
@@ -1759,7 +1837,10 @@ class Browser:
     else:
       tab_y = e.y - self.chrome.bottom
       self.active_tab.click(e.x, tab_y)
-    self.draw()
+    
+    # Only draw if we still have tabs (window wasn't destroyed)
+    if len(self.tabs) > 0:
+      self.draw()
   
   def handle_resize(self, e):
     self.active_tab.on_resize(e)
@@ -1790,7 +1871,7 @@ class Browser:
     # If this was the last tab, close the browser
     if len(self.tabs) == 0:
       self.window.destroy()
-      return
+      return  # DON'T call draw() after this!
     
     # If we closed the active tab, switch to another tab
     if tab == self.active_tab:
@@ -1799,9 +1880,6 @@ class Browser:
         self.active_tab = self.tabs[index - 1]
       else:
         self.active_tab = self.tabs[0]
-    
-    self.draw()
-
 
 if __name__ == "__main__":
     import sys
