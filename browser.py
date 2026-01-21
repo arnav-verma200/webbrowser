@@ -387,7 +387,6 @@ def style(node, rules, url):
         style(child, rules, url)
 
 
-
 def tree_to_list(tree, list):
   list.append(tree)
   for child in tree.children:
@@ -1562,10 +1561,41 @@ class Chrome:
 
   def enter(self):
     if self.focus == "address bar":
-      self.window.active_tab.load(URL(self.address_bar))
+      # Check if input is a URL or search query
+      if self.is_url(self.address_bar):
+        self.window.active_tab.load(URL(self.address_bar))
+      else:
+        # Treat as search query
+        query = self.address_bar.replace(" ", "+")
+        search_url = f"https://google.com/search?q={query}"
+        self.window.active_tab.load(URL(search_url))
+      
       self.focus = None
       self.cursor_position = 0
 
+  def is_url(self, text):
+    # Check if it looks like a URL
+    if "://" in text:
+      return True
+    
+    # Check if it starts with a scheme
+    if text.startswith("http://") or text.startswith("https://"):
+      return True
+    
+    if text.startswith("file://") or text.startswith("about:"):
+      return True
+    
+    # Check if it has a domain extension (simple heuristic)
+    # e.g., "example.com" or "browser.engineering"
+    if "." in text and " " not in text:
+      # Check if there's at least one dot not at the start/end
+      parts = text.split(".")
+      if len(parts) >= 2 and all(part for part in parts):
+        return True
+    
+    # Otherwise, treat as search query
+    return False
+  
   def toggle_bookmark(self):
     current_url = str(self.window.active_tab.url)
     if self.window.active_tab.url.scheme in ["http", "https"]:
@@ -1588,6 +1618,7 @@ class Chrome:
         self.cursor_position += len(clipboard_text)
       except:
         pass
+
 
 # Represents rectangular areas for layout calculations
 class Rect:
