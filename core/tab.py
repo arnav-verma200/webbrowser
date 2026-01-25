@@ -8,6 +8,8 @@ from style.style_engine import style
 from layout.document_layout import DocumentLayout
 from rendering.utils import paint_tree
 from config.constants import *
+from config.paths import BROWSER_CSS_PATH
+
 
 
 class Tab:
@@ -150,10 +152,10 @@ class Tab:
         # I'll import it or load it here.
         # It was global in browser.py
         try:
-             with open("browser.css") as f:
+            with open(BROWSER_CSS_PATH, encoding="utf-8") as f:
                 default_style_sheet = CSSParser(f.read()).parse()
         except FileNotFoundError:
-             default_style_sheet = []
+            default_style_sheet = []
         
         rules = default_style_sheet.copy()
         

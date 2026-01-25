@@ -1,8 +1,10 @@
 import os
+from config.paths import BOOKMARKS_PATH
 
 class BookmarkManager:
-    def __init__(self, filename="bookmarks.txt"):
-        self.filename = filename
+    def __init__(self, filename=None):
+        # Use default path if none provided
+        self.filename = str(filename) if filename else str(BOOKMARKS_PATH)
         self.bookmarks = set()
         self.load()
     
