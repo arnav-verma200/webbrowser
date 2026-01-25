@@ -2,7 +2,6 @@
 # User generated
 todo.txt
 bookmarks.txt
-browser.py
 
 # Python
 __pycache__/
@@ -30,3 +29,6 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+first_draft
+.original_code_in_one_file
