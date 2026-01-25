@@ -1,16 +1,15 @@
-from config.constants import HSTEP, VSTEP, Width
 from layout.block_layout import BlockLayout
+from config.constants import HSTEP, VSTEP
 
 class DocumentLayout:
-    def __init__(self, node):
+    def __init__(self, node, width=None):
+        from config.constants import Width
         self.node = node
         self.children = []
-        
         self.parent = None
-
         self.x = HSTEP
         self.y = VSTEP
-        self.width = Width - 2 * HSTEP
+        self.width = width if width is not None else (Width - 2 * HSTEP)
         self.height = 0
 
     def paint(self):

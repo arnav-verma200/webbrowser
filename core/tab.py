@@ -7,6 +7,8 @@ from parser.css_parser import CSSParser
 from style.style_engine import style
 from layout.document_layout import DocumentLayout
 from rendering.utils import paint_tree
+from config.constants import *
+
 
 class Tab:
     def __init__(self, tab_height):
@@ -99,26 +101,20 @@ class Tab:
             self.scroll = max_scroll
     
     def on_resize(self, event):
-        from config import constants
-        constants.Width = event.width
-        constants.Height = event.height
-        
-        # Need to update global Width/Height in constants if they are used elsewhere
-        # But for now they are imported values. This might be tricky if constants.py is immutable.
-        # It's better to pass width/height to layout.
-        # But layout imports from constants. 
-        # I'll update the module variables directly.
-        
         if not hasattr(self, "document"):
             return
-
-        self.document.width = constants.Width - 2 * constants.HSTEP
+        
+        from config.constants import HSTEP
+        
+        # Update document width and re-layout
+        self.document.width = event.width - 2 * HSTEP
         self.document.children = []
         self.document.layout()
 
+        # Regenerate display list
         self.display_list = []
         paint_tree(self.document, self.display_list)
-
+    
     def go_back(self):
         if self.history_index > 0:
             self.history_index -= 1
@@ -178,7 +174,7 @@ class Tab:
 
         style(self.nodes, rules, url)
 
-        self.document = DocumentLayout(self.nodes)
+        self.document = DocumentLayout(self.nodes, width=Width - 2 * HSTEP)
         self.document.layout()
 
         if url.fragment:

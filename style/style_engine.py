@@ -62,22 +62,6 @@ def style(node, rules, url):
             # Actually INHERITED_PROPERTIES is local here, but let's use the local one
             parent_px = int(INHERITED_PROPERTIES["font-size"][:-2])
         node.style["font-size"] = str(int(parent_px * pct)) + "px"
-
-    # Moving visited link logic to browser/tab because it requires VISITED_URLS
-    # Or passing VISITED_URLS in. The original code used global VISITED_URLS.
-    # We will need to handle this. For now keeping simplified or injecting dependency?
-    # Original: if str(url.resolve(node.attributes["href"])) in VISITED_URLS:
-    # I'll rely on passing visited_urls separately or make it a global in constants/core?
-    # Let's import it from a central place or handle it later.
-    # ideally style() shouldn't depend on global state. 
-    # For now, I'll stub it or assume visited_urls logic is handled in Tab or we pass it.
-    # Re-reading browser.py: start calls style(self.nodes, rules, url). VISITED_URLS is global.
-    # I'll skip the visited link color for now or import it from core later if I move it to core.
-    # Better: style function signature doesn't include visited_urls.
-    # I'll check if I can import VISITED_URLS from core.browser (circular?) or core.
-    # Let's import from a state module if possible.
-    # Decided: I will skip the visited check here to avoid circular dependencies for now
-    # and re-add it if I create a clean way (e.g. passing it in).
     
     for child in node.children:
         style(child, rules, url)
