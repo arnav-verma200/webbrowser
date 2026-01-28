@@ -2,7 +2,8 @@
 # User generated
 todo.txt
 bookmarks.txt
-
+__pycache__
+browser.cpython-311
 # Python
 __pycache__/
 *.py[cod]
