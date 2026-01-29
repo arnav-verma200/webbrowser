@@ -1,2 +1,4 @@
 # No external dependencies required.
 # This project uses the Python standard library (tkinter, socket, ssl).
+# Ensure you have Python installed (version 3.6 or higher recommended).
+# You can install Python from https://www.python.org/downloads/
